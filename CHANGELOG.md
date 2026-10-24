@@ -2,6 +2,10 @@
 
 What changed in the libretro core of this fork, newest first. Changes that come with a merge of upstream xemu are in upstream's own history; a merge is noted here with the upstream version it brought in.
 
+## Unreleased
+
+- Merge official xemu through `0.8.138-3` (`25e1ee2fd5`), including vertex-register carryover and texture, surface-dirty tracking and Vulkan shader-target fixes. Keep the standalone UI and packaging excluded.
+
 ## Test build 3 - 2026-10-12
 
 - The console's files are also found in `system/` itself, where an older core info file had them, and the BIOS also as `Complex_4627.bin`. `system/xemu/` and `Complex_4627v1.03.bin` stay the documented place and name (boardsofcanada).
