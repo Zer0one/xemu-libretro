@@ -313,6 +313,7 @@ typedef struct PGRAPHVkDisplayState {
         VkImage image;
         VkDeviceMemory memory;
         VkImageView view;
+        VkSemaphore ready_semaphore;
         int width, height;
         bool ready;
         uint64_t retire_at;
@@ -322,6 +323,18 @@ typedef struct PGRAPHVkDisplayState {
      * one before: another surface, or one drawn to since */
     uint64_t guest_frame_count;
     hwaddr last_surface_addr;
+    VkImage last_surface_image;
+    uint64_t last_uniform_hash;
+    bool repeated_frame_valid;
+    /* Each frontend sync index has independent compositor recording state.
+     * The producer fence protects CPU reuse; ready_semaphore protects the
+     * frontend's GPU reads. Neither substitutes for wait_sync_index. */
+    struct {
+        VkCommandBuffer command_buffer;
+        VkDescriptorSet descriptor_set;
+        VkFence fence;
+        bool pending;
+    } submissions[XEMU_LIBRETRO_VK_FRAMES];
 #endif
 } PGRAPHVkDisplayState;
 
@@ -356,6 +369,10 @@ typedef struct PGRAPHVkState {
     bool debug_utils_extension_enabled;
     bool custom_border_color_extension_enabled;
     bool memory_budget_extension_enabled;
+    bool supports_geometry_shaders;
+    bool supports_shader_demote;
+    bool supports_sampler_lod_bias;
+    bool emulate_triangle_fans;
 
     VkPhysicalDevice physical_device;
     VkPhysicalDeviceFeatures enabled_physical_device_features;
@@ -513,6 +530,9 @@ void pgraph_vk_init_command_buffers(PGRAPHState *pg);
 void pgraph_vk_finalize_command_buffers(PGRAPHState *pg);
 VkCommandBuffer pgraph_vk_begin_single_time_commands(PGRAPHState *pg);
 void pgraph_vk_end_single_time_commands(PGRAPHState *pg, VkCommandBuffer cmd);
+void pgraph_vk_end_single_time_commands_signal(PGRAPHState *pg,
+                                               VkCommandBuffer cmd,
+                                               VkSemaphore signal);
 void pgraph_vk_queue_submit(PGRAPHVkState *r, uint32_t count,
                             const VkSubmitInfo *submits, VkFence fence);
 void pgraph_vk_queue_submit_and_wait(PGRAPHVkState *r, uint32_t count,
@@ -580,6 +600,7 @@ void pgraph_vk_unpack_depth_stencil(PGRAPHState *pg, SurfaceBinding *surface,
 // display.c
 void pgraph_vk_init_display(PGRAPHState *pg);
 void pgraph_vk_finalize_display(PGRAPHState *pg);
+void pgraph_vk_wait_display(PGRAPHVkState *r);
 void pgraph_vk_render_display(PGRAPHState *pg);
 
 // texture.c

@@ -1,0 +1,179 @@
+{
+  "device": "Apple M4",
+  "cases": 48,
+  "interior_samples": 89712,
+  "validation_errors": 0,
+  "bounded_gates": "pass",
+  "limits": [
+    "Synthetic ordinary positive-W triangles only; no guest scene or Xbox hardware reference.",
+    "Upstream GS equations run in fragment stage, not an actual geometry shader.",
+    "Outputs are raw and encoded fragment values in RGBA32F; depth attachments and equality tests are not exercised.",
+    "Edge/helper behavior, clipping, degenerate primitives and other devices remain unqualified."
+  ],
+  "date": "2026-10-24",
+  "driver": "/Users/andrea/Retro/Apps/RetroArch/Nightly/RetroArch (ARM).app/Contents/Frameworks/MoltenVK.framework/Versions/A/MoltenVK",
+  "driver_sha256": "6c511b765b68df9043b05fe6cdaacb78ce256115aab887a2b9d9c582143aa22b",
+  "raw_evidence": "build/depth-validation/reproducible/",
+  "source_manifest": {
+    "hw/xbox/nv2a/pgraph/glsl/psh.c": "180bd6a13ac38e4e215292d17613830d881b72214a7ece72d1343388b6188481",
+    "hw/xbox/nv2a/pgraph/glsl/geom.c": "9330262cea2efc702a36b1ec9dbe0cdd318430e7d62a62dc3b9565f4a75dcd54",
+    "docs/patches/vulkan-depth-candidates/01-reciprocal-w-and-bias.patch": "539a83a39387012f63c60c5ced7a0f39b0f9aa8ac4eb6c868423ac217748da26"
+  },
+  "test_sources": {
+    "probe.cpp": "dc0b4a5578d868ba10b4ef67c12ed55c2d2c8b31387b4fe27c9ccdb3ac9275bc",
+    "run-macos.py": "f65d02a91ac076f90e73108253c3c43e5a956c438ccacdd403bbafc0c2267d45",
+    "README.md": "5c341ec2cd4d3a23475758b7543e6dcafa92cbc4e4a2a9f5f0ecae3b1b68575e",
+    "prepare.py": "52d07a62f33f0d49c8326c40e8d192e52e5ef3d9c83c713215351bdf81990031",
+    "analyze.py": "3a1696514892fa8a8adc8d8aac74fea744fdc140d0636175b38516c500d9ccba"
+  },
+  "repeat_analysis_identical": true,
+  "max_difference_from_upstream_equations": {
+    "ZD16": {
+      "raw_guest_units": 0.0234375,
+      "encoded_mismatches": 70,
+      "interior_samples": 22428
+    },
+    "ZD24": {
+      "raw_guest_units": 6.0,
+      "encoded_mismatches": 10800,
+      "interior_samples": 22428
+    },
+    "WD16": {
+      "raw_guest_units": 0.01953125,
+      "encoded_mismatches": 35,
+      "interior_samples": 22428
+    },
+    "WD24": {
+      "raw_guest_units": 4.0,
+      "encoded_mismatches": 6221,
+      "interior_samples": 22428
+    }
+  },
+  "representative_rows": [
+    {
+      "file": "scale-4x2-d24-z-bias1.f32",
+      "width": 128,
+      "height": 64,
+      "scale": [
+        4,
+        2
+      ],
+      "d24": 1,
+      "wmode": 0,
+      "bias": 1,
+      "interior_samples": 2061,
+      "nonfinite": 0,
+      "baseline": {
+        "mean_abs": 281327.98459485685,
+        "max_abs": 281330.0,
+        "p99_abs": 281330.0
+      },
+      "w_only": {
+        "mean_abs": 281327.98459485685,
+        "max_abs": 281330.0,
+        "p99_abs": 281330.0
+      },
+      "scaled": {
+        "mean_abs": 0.7631004366812227,
+        "max_abs": 5.0,
+        "p99_abs": 5.0
+      },
+      "encoded_mismatches": {
+        "baseline": 2061,
+        "w_only": 2061,
+        "scaled": 1325
+      },
+      "reference_vs_cpu_double": {
+        "mean_abs": 0.44195336639503363,
+        "max_abs": 1.7757280431687832,
+        "p99_abs": 1.4728393629193306
+      }
+    },
+    {
+      "file": "scale-4x2-d24-w-bias0.f32",
+      "width": 128,
+      "height": 64,
+      "scale": [
+        4,
+        2
+      ],
+      "d24": 1,
+      "wmode": 1,
+      "bias": 0,
+      "interior_samples": 2061,
+      "nonfinite": 0,
+      "baseline": {
+        "mean_abs": 3261183.947901504,
+        "max_abs": 4918102.0,
+        "p99_abs": 4827709.5
+      },
+      "w_only": {
+        "mean_abs": 0.23319990295972828,
+        "max_abs": 1.5,
+        "p99_abs": 1.0
+      },
+      "scaled": {
+        "mean_abs": 0.23319990295972828,
+        "max_abs": 1.5,
+        "p99_abs": 1.0
+      },
+      "encoded_mismatches": {
+        "baseline": 2061,
+        "w_only": 418,
+        "scaled": 418
+      },
+      "reference_vs_cpu_double": {
+        "mean_abs": 0.16550307044843443,
+        "max_abs": 0.9760836055502295,
+        "p99_abs": 0.7314054518938065
+      }
+    },
+    {
+      "file": "scale-4x2-d24-w-bias1.f32",
+      "width": 128,
+      "height": 64,
+      "scale": [
+        4,
+        2
+      ],
+      "d24": 1,
+      "wmode": 1,
+      "bias": 1,
+      "interior_samples": 2061,
+      "nonfinite": 0,
+      "baseline": {
+        "mean_abs": 3057709.881004367,
+        "max_abs": 4663095.0,
+        "p99_abs": 4575366.0
+      },
+      "w_only": {
+        "mean_abs": 179608.62615235322,
+        "max_abs": 756728.0,
+        "p99_abs": 593782.5
+      },
+      "scaled": {
+        "mean_abs": 0.3974405628335759,
+        "max_abs": 3.0,
+        "p99_abs": 2.0
+      },
+      "encoded_mismatches": {
+        "baseline": 2061,
+        "w_only": 2061,
+        "scaled": 715
+      },
+      "reference_vs_cpu_double": {
+        "mean_abs": 0.2555814905419507,
+        "max_abs": 1.546103403903544,
+        "p99_abs": 1.1935768071562052
+      }
+    }
+  ],
+  "evidence_sha256": {
+    "gpu.json": "f9a95616ea3a54c3ccc526374261bdb07b4f58f6d162e9a3b2fc29a587f129e8",
+    "analysis.json": "05fd0144ee584bffe2c6ef2404eff0524a67259e679ee6fdb4602adb29938640",
+    "run.log": "737368f6ddec6b9c9ab809e04bd68d28df60b755ccbb9c8f8f0928fcb7f8c6ce",
+    "test-manifest.json": "3dc63fe4a6b669f45b55a8be14b1d1c7992c5af7acbb973c9fa4406372940041",
+    "probe.vert": "2bb1102ffad3211a2f998e5b0cafbdb24b59152d3a02659cc5e6bef56803349a",
+    "probe.frag": "696b5ef43fb9fecf572eb328ef4461ac434eee4397953769ae6c25192de709ce"
+  }
+}

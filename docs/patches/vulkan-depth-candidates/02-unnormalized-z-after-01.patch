@@ -1,0 +1,72 @@
+--- a/hw/xbox/nv2a/pgraph/glsl/psh.c
++++ b/hw/xbox/nv2a/pgraph/glsl/psh.c
+@@ -834,6 +834,11 @@
+     MString *preflight = mstring_new();
+     pgraph_glsl_get_vtx_header(preflight, ps->opts.vulkan,
+                              ps->state->smooth_shading, true, false, false);
++
++    if (ps->state->use_hw_depth) {
++        mstring_append(preflight,
++                       "layout(location = 14) noperspective in float vtxDepth;\n");
++    }
+ 
+     if (ps->opts.vulkan) {
+         mstring_append_fmt(
+@@ -1049,9 +1054,9 @@
+         } else {
+             mstring_append(
+                 clip,
+-                "float zvalue = gl_FragCoord.z * clipRange.y;\n"
+-                "float hw_dzdx = dFdx(gl_FragCoord.z) * clipRange.y * surfaceScale.x;\n"
+-                "float hw_dzdy = dFdy(gl_FragCoord.z) * clipRange.y * surfaceScale.y;\n"
++                "precise float zvalue = vtxDepth;\n"
++                "float hw_dzdx = dFdx(vtxDepth) * surfaceScale.x;\n"
++                "float hw_dzdy = dFdy(vtxDepth) * surfaceScale.y;\n"
+                 "float hw_maxSlope = max(abs(hw_dzdx), abs(hw_dzdy));\n"
+                 "zvalue += depthOffset;\n"
+                 "zvalue += depthFactor * hw_maxSlope;\n");
+--- a/hw/xbox/nv2a/pgraph/glsl/vsh.c
++++ b/hw/xbox/nv2a/pgraph/glsl/vsh.c
+@@ -238,6 +238,11 @@
+     pgraph_glsl_get_vtx_header(header, opts.vulkan, state->smooth_shading,
+                                false, opts.prefix_outputs, false);
+ 
++    if (opts.use_hw_depth) {
++        mstring_append(header,
++                       "layout(location = 14) noperspective out float vtxDepth;\n");
++    }
++
+     if (opts.prefix_outputs) {
+         mstring_append(header,
+                        "#define vtxD0 v_vtxD0\n"
+@@ -416,6 +421,10 @@
+                    "  gl_PointSize = oPts.x;\n"
+     );
+ 
++    if (opts.use_hw_depth) {
++        mstring_append(body, "  vtxDepth = vtxPos.z;\n");
++    }
++
+     if (state->specular_enable) {
+         mstring_append(body,
+                        "  vtxD1 = clamp(NaNToOne(oD1), 0.0, 1.0);\n"
+--- a/hw/xbox/nv2a/pgraph/glsl/vsh.h
++++ b/hw/xbox/nv2a/pgraph/glsl/vsh.h
+@@ -101,6 +101,7 @@
+     bool vulkan;
+     bool prefix_outputs;
+     bool use_push_constants_for_uniform_attrs;
++    bool use_hw_depth;
+     int ubo_binding;
+ } GenVshGlslOptions;
+ 
+--- a/hw/xbox/nv2a/pgraph/vk/shaders.c
++++ b/hw/xbox/nv2a/pgraph/vk/shaders.c
+@@ -290,6 +290,7 @@
+     key.vsh.glsl_opts.prefix_outputs = need_geometry_shader;
+     key.vsh.glsl_opts.use_push_constants_for_uniform_attrs =
+         r->use_push_constants_for_uniform_attrs;
++    key.vsh.glsl_opts.use_hw_depth = !r->supports_geometry_shaders;
+     key.vsh.glsl_opts.ubo_binding = VSH_UBO_BINDING;
+     binding->vsh.module_info = get_and_ref_shader_module_for_key(r, &key);
+ 

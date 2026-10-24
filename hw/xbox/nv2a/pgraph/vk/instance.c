@@ -585,6 +585,10 @@ static bool create_logical_device(PGRAPHState *pg, Error **errp)
         return false;
     }
 
+    r->supports_geometry_shaders =
+        r->enabled_physical_device_features.geometryShader;
+    r->supports_sampler_lod_bias = true;
+
     void *next_struct = NULL;
 
     VkPhysicalDeviceCustomBorderColorFeaturesEXT custom_border_features;
@@ -702,6 +706,13 @@ static bool adopt_frontend_device(PGRAPHState *pg, Error **errp)
     r->debug_utils_extension_enabled = false;
     r->custom_border_color_extension_enabled = s->custom_border_color;
     r->memory_budget_extension_enabled = s->memory_budget;
+    r->supports_geometry_shaders = s->features.geometryShader;
+    r->supports_shader_demote = s->shader_demote;
+    r->supports_sampler_lod_bias = s->sampler_mip_lod_bias;
+#ifdef __APPLE__
+    /* Avoid the Metal compute conversion and render-pass restart per fan. */
+    r->emulate_triangle_fans = true;
+#endif
 
     fprintf(stderr,
             "Vulkan device shared with the frontend: %s, queue family %u (%s)\n",

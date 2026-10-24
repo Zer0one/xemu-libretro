@@ -1,0 +1,54 @@
+--- a/hw/xbox/nv2a/pgraph/glsl/psh.c
++++ b/hw/xbox/nv2a/pgraph/glsl/psh.c
+@@ -1023,19 +1023,39 @@
+     }
+ 
+     if (ps->state->use_hw_depth) {
+-        /* When Geometry Shaders are unavailable (e.g. MoltenVK), vtxPos0/1/2
+-         * and triMZ cannot be correctly computed per-triangle. Fall back to
+-         * hardware-interpolated depth from gl_FragCoord.z, scaled to the
+-         * depth range expected by the Xbox NV2A pipeline.
+-         * Use dFdx/dFdy to approximate the depth slope that triMZ provides.
++        /* Without a geometry shader, the rasterizer supplies the depth
++         * plane. Z-buffering uses the interpolated Z, but W-buffering must
++         * reconstruct W from the interpolated reciprocal clip W. Its bias
++         * uses the slope of 1/W, just like calc_triz's perspective branch.
++         * Derivatives are per host pixel; triMZ is per guest pixel.
+          */
+-        mstring_append(clip,
+-                       "float zvalue = gl_FragCoord.z * clipRange.y;\n"
+-                       "float hw_dzdx = dFdx(gl_FragCoord.z) * clipRange.y;\n"
+-                       "float hw_dzdy = dFdy(gl_FragCoord.z) * clipRange.y;\n"
+-                       "float hw_maxSlope = max(abs(hw_dzdx), abs(hw_dzdy));\n"
+-                       "zvalue += depthOffset;\n"
+-                       "zvalue += depthFactor * hw_maxSlope;\n");
++        if (ps->state->z_perspective) {
++            mstring_append(
++                clip,
++                "precise float zvalue = 1.0 / gl_FragCoord.w;\n"
++                "float hw_dzdx = dFdx(gl_FragCoord.w) * surfaceScale.x;\n"
++                "float hw_dzdy = dFdy(gl_FragCoord.w) * surfaceScale.y;\n"
++                "float hw_maxSlope = max(abs(hw_dzdx), abs(hw_dzdy));\n"
++                "if (zvalue > 0.0) {\n"
++                "  float zslopeofs = depthFactor*hw_maxSlope*zvalue*zvalue;\n"
++                "  zvalue += depthOffset;\n"
++                "  zvalue += zslopeofs;\n"
++                "} else {\n"
++                "  zvalue = uintBitsToFloat(0x7F7FFFFFu);\n"
++                "}\n"
++                "if (isnan(zvalue)) {\n"
++                "  zvalue = uintBitsToFloat(0x7F7FFFFFu);\n"
++                "}\n");
++        } else {
++            mstring_append(
++                clip,
++                "float zvalue = gl_FragCoord.z * clipRange.y;\n"
++                "float hw_dzdx = dFdx(gl_FragCoord.z) * clipRange.y * surfaceScale.x;\n"
++                "float hw_dzdy = dFdy(gl_FragCoord.z) * clipRange.y * surfaceScale.y;\n"
++                "float hw_maxSlope = max(abs(hw_dzdx), abs(hw_dzdy));\n"
++                "zvalue += depthOffset;\n"
++                "zvalue += depthFactor * hw_maxSlope;\n");
++        }
+     } else if (ps->state->z_perspective) {
+         mstring_append(
+             clip,

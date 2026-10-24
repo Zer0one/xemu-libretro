@@ -29,6 +29,11 @@ GloContext *g_nv2a_context_display;
 
 static void early_context_init(void)
 {
+#ifdef LIBRETRO
+    /* context_destroy already finalized the renderer on these contexts. */
+    glo_context_destroy(g_nv2a_context_render);
+    glo_context_destroy(g_nv2a_context_display);
+#endif
     g_nv2a_context_render = glo_context_create();
     g_nv2a_context_display = glo_context_create();
 

@@ -1,0 +1,52 @@
+--- a/MoltenVK/MoltenVK/GPUObjects/MVKImage.h
++++ b/MoltenVK/MoltenVK/GPUObjects/MVKImage.h
+@@ -506,7 +506,7 @@
+ 	MVKSwapchainImageAvailability getAvailability();
+ 	void makeAvailable();
+ 	VkResult acquireAndSignalWhenAvailable(MVKSemaphore* semaphore, MVKFence* fence);
+-	MVKSwapchainSignaler getPresentationSignaler();
++	MVKSwapchainSignaler getPresentationSignaler(bool* deferred = nullptr);
+ 
+ 	std::mutex _drawableLock;
+ 	std::condition_variable _drawableReady;
+--- a/MoltenVK/MoltenVK/GPUObjects/MVKImage.mm
++++ b/MoltenVK/MoltenVK/GPUObjects/MVKImage.mm
+@@ -1644,7 +1644,15 @@
+ 	retain();
+ 	[mtlDrwbl retain];
+ 	releaseMetalDrawable();
+-	MVKSwapchainSignaler signaler = getPresentationSignaler();
++	bool acquisitionDeferred = false;
++	MVKSwapchainSignaler signaler = getPresentationSignaler(&acquisitionDeferred);
++	// Experimental: the old drawable has been detached and retained above.
++	// Complete a deferred CPU acquisition with its predecessor's GPU work,
++	// matching the semaphore's GPU dependency instead of waiting for scanout.
++	// Move the existing tracked fence reference to exactly one callback.
++	static const bool fenceOnCompletion = getenv("XEMU_MVK_ACQUIRE_FENCE_COMPLETION") != nullptr;
++	MVKFence* acquisitionFence = acquisitionDeferred && fenceOnCompletion ? signaler.fence : nullptr;
++	if (acquisitionFence) { signaler.fence = nullptr; }
+ 	[mtlCmdBuff addScheduledHandler: ^(id<MTLCommandBuffer> mcb) {
+ 
+ 		addPresentedHandler(mtlDrwbl, presentInfo, signaler);
+@@ -1669,6 +1677,10 @@
+ 	auto* fence = presentInfo.fence;
+ 	if (fence) { fence->retain(); }
+ 	[mtlCmdBuff addCompletedHandler: ^(id<MTLCommandBuffer> mcb) {
++		if (acquisitionFence) {
++			signal(acquisitionFence);
++			acquisitionFence->release();
++		}
+ 		signal(fence);
+ 		if (fence) { fence->release(); }
+ 		[mtlDrwbl release];
+@@ -1686,8 +1698,9 @@
+ 	return getConfigurationResult();
+ }
+ 
+-MVKSwapchainSignaler MVKPresentableSwapchainImage::getPresentationSignaler() {
++MVKSwapchainSignaler MVKPresentableSwapchainImage::getPresentationSignaler(bool* deferred) {
+ 	lock_guard<mutex> lock(_availabilityLock);
++	if (deferred) { *deferred = !_availabilitySignalers.empty(); }
+ 
+ 	// Mark this image as available if no semaphores or fences are waiting to be signaled.
+ 	_availability.isAvailable = _availabilitySignalers.empty();

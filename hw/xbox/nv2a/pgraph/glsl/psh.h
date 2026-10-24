@@ -70,6 +70,8 @@ typedef struct PshState {
     bool depth_clipping;
     bool z_perspective;
 
+    bool use_hw_depth;
+
     unsigned int surface_zeta_format;
     enum PshDepthFormat depth_format;
 } PshState;
@@ -90,12 +92,15 @@ void pgraph_glsl_set_psh_state(PGRAPHState *pg, PshState *state);
     DECL(S, depthOffset, float, 1)  \
     DECL(S, fogColor, vec4, 1)      \
     DECL(S, surfaceScale, ivec2, 1) \
-    DECL(S, texScale, float, 4)
+    DECL(S, texScale, float, 4)    \
+    DECL(S, texBorderColor, vec4, 4) \
+    DECL(S, texBorderAxes, uint, 4)
 
 DECL_UNIFORM_TYPES(PshUniform, PSH_UNIFORM_DECL_X)
 
 typedef struct GenPshGlslOptions {
     bool vulkan;
+    bool emulate_int_border;
     int ubo_binding;
     int tex_binding;
 } GenPshGlslOptions;

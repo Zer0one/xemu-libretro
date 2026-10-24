@@ -1233,7 +1233,7 @@ struct retro_core_options_v2 options_bg = {
 #define XEMU_HARD_FPU_LABEL_CA "Emulació del maquinari FPU"
 #define XEMU_HARD_FPU_INFO_0_CA "Fes servir l'amfitrió FPU per l'emulació de x87. És més ràpid però pot provocar alguna imprecisió."
 #define XEMU_RENDERER_LABEL_CA "API de gràfics (Cal reiniciar)"
-#define XEMU_RENDERER_INFO_0_CA "El motor de renderització utilitzat per dibuixar la GPU emulada. Vulkan és l'opció predeterminada; OpenGL és l'alternativa per als controladors en què Vulkan no funciona correctament. Els canvis s'apliquen després de reiniciar RetroArch. Android utilitza sempre Vulkan, mentre que macOS utilitza sempre OpenGL."
+#define XEMU_RENDERER_INFO_0_CA NULL
 #define OPTION_VAL_VULKAN_CA NULL
 #define OPTION_VAL_OPENGL_CA NULL
 #define XEMU_ASPECT_RATIO_LABEL_CA "Relació d'aspecte"
@@ -1527,7 +1527,7 @@ struct retro_core_options_v2 options_ca = {
 #define XEMU_HARD_FPU_LABEL_CHS "硬件 FPU 模拟"
 #define XEMU_HARD_FPU_INFO_0_CHS "使用宿主机的 FPU 来模拟 x87 指令。速度更快，但可能会有轻微的精度偏差。"
 #define XEMU_RENDERER_LABEL_CHS "图形 API (需重启)"
-#define XEMU_RENDERER_INFO_0_CHS "用于绘制模拟 GPU 的渲染器。默认为 Vulkan；当驱动程序无法正常运行 Vulkan 时可回退使用 OpenGL。在重启 RetroArch 后生效。Android 始终使用 Vulkan，macOS 始终使用 OpenGL。"
+#define XEMU_RENDERER_INFO_0_CHS NULL
 #define OPTION_VAL_VULKAN_CHS NULL
 #define OPTION_VAL_OPENGL_CHS NULL
 #define XEMU_ASPECT_RATIO_LABEL_CHS "宽高比"
@@ -2997,7 +2997,7 @@ struct retro_core_options_v2 options_da = {
 #define XEMU_HARD_FPU_LABEL_DE "Hardware-FPU-Emulation"
 #define XEMU_HARD_FPU_INFO_0_DE "Für die x87-Emulation die Host-FPU verwenden. Schneller, aber möglicherweise mit geringfügigen Ungenauigkeiten."
 #define XEMU_RENDERER_LABEL_DE "Grafik-API (Neustart)"
-#define XEMU_RENDERER_INFO_0_DE "Renderer für die Darstellung der emulierten GPU. Vulkan ist die Standardeinstellung; OpenGL dient als Ausweichlösung bei Treibern, mit denen Vulkan Probleme verursacht. Änderung wird nach einem Neustart von RetroArch wirksam. Unter Android wird immer Vulkan verwendet, unter macOS immer OpenGL."
+#define XEMU_RENDERER_INFO_0_DE NULL
 #define OPTION_VAL_VULKAN_DE NULL
 #define OPTION_VAL_OPENGL_DE NULL
 #define XEMU_ASPECT_RATIO_LABEL_DE "Bildseitenverhältnis"
@@ -4173,7 +4173,7 @@ struct retro_core_options_v2 options_eo = {
 #define XEMU_HARD_FPU_LABEL_ES "Emulación de FPU de hardware"
 #define XEMU_HARD_FPU_INFO_0_ES "Utiliza la FPU del host para emular el código x87. Es más rápido, pero tendrá pequeñas pérdidas de precisión."
 #define XEMU_RENDERER_LABEL_ES "API de gráficos (es necesario reiniciar)"
-#define XEMU_RENDERER_INFO_0_ES "El renderizador con el que se dibujará la GPU emulada. Vulkan es el predeterminado, OpenGL es el de respaldo para aquellos controladores en los que Vulkan dé problemas. Es necesario reiniciar RetroArch. Android utilizará siempre Vulkan y macOS utilizará OpenGL."
+#define XEMU_RENDERER_INFO_0_ES NULL
 #define OPTION_VAL_VULKAN_ES NULL
 #define OPTION_VAL_OPENGL_ES NULL
 #define XEMU_ASPECT_RATIO_LABEL_ES "Relación de aspecto"
@@ -5055,7 +5055,7 @@ struct retro_core_options_v2 options_fi = {
 #define XEMU_HARD_FPU_LABEL_FR "Émulation matérielle de FPU"
 #define XEMU_HARD_FPU_INFO_0_FR "Utiliser la FPU de l'hôte pour l'émulation x87. Plus rapide, mais peut entraîner de légères imprécisions."
 #define XEMU_RENDERER_LABEL_FR "API graphique (redémarrage)"
-#define XEMU_RENDERER_INFO_0_FR "Le moteur de rendu utilisé pour afficher le processeur graphique émulé. Vulkan est l'option par défaut ; OpenGL sert d'alternative lorsque Vulkan ne fonctionne pas correctement. La modification prend effet après le redémarrage de RetroArch. Android utilise toujours Vulkan, tandis que macOS utilise toujours OpenGL."
+#define XEMU_RENDERER_INFO_0_FR NULL
 #define OPTION_VAL_VULKAN_FR NULL
 #define OPTION_VAL_OPENGL_FR NULL
 #define XEMU_ASPECT_RATIO_LABEL_FR "Rapport d'aspect"
@@ -5349,7 +5349,7 @@ struct retro_core_options_v2 options_fr = {
 #define XEMU_HARD_FPU_LABEL_GA "Aithris FPU trí Chrua-earraí"
 #define XEMU_HARD_FPU_INFO_0_GA "Bain úsáid as FPU an óstaigh le haghaidh aithrise x87. Bíonn sé níos tapúla, ach d’fhéadfadh mion-mhíchruinneas a bheith i gceist."
 #define XEMU_RENDERER_LABEL_GA "API Grafaice (Atosaigh)"
-#define XEMU_RENDERER_INFO_0_GA "An t-inneall rindreála a úsáidtear chun an GPU insamhlaithe a tharraingt. Is é Vulkan an rogha réamhshocraithe; úsáidtear OpenGL mar rogha chúltaca i gcás tiománaithe nach n-oibríonn i gceart le Vulkan. Tiocfaidh an t-athrú i bhfeidhm tar éis RetroArch a atosú. Úsáideann Android Vulkan i gcónaí, agus úsáideann macOS OpenGL i gcónaí."
+#define XEMU_RENDERER_INFO_0_GA NULL
 #define OPTION_VAL_VULKAN_GA NULL
 #define OPTION_VAL_OPENGL_GA NULL
 #define XEMU_ASPECT_RATIO_LABEL_GA "Cóimheas Gnéithe"
@@ -10053,7 +10053,7 @@ struct retro_core_options_v2 options_ru = {
 #define XEMU_HARD_FPU_LABEL_SK "Hardvérová emulácia FPU"
 #define XEMU_HARD_FPU_INFO_0_SK "Použije FPU hostiteľa na emuláciu x87. Rýchlejšie, ale môže mať drobné nepresnosti."
 #define XEMU_RENDERER_LABEL_SK "Grafické API (reštart)"
-#define XEMU_RENDERER_INFO_0_SK "Renderer, ktorým sa kreslí emulované GPU. Vulkan je predvolený; OpenGL je záloha pre ovládače, kde Vulkan nefunguje správne. Prejaví sa po reštarte RetroArchu. Android vždy používa Vulkan, macOS vždy OpenGL."
+#define XEMU_RENDERER_INFO_0_SK NULL
 #define OPTION_VAL_VULKAN_SK NULL
 #define OPTION_VAL_OPENGL_SK NULL
 #define XEMU_ASPECT_RATIO_LABEL_SK "Pomer strán"
@@ -10641,7 +10641,7 @@ struct retro_core_options_v2 options_sr = {
 #define XEMU_HARD_FPU_LABEL_SV "Maskinvaruemulering av FPU"
 #define XEMU_HARD_FPU_INFO_0_SV "Använd värddatorns FPU för x87-emulering. Det går snabbare men kan ge mindre avvikelser."
 #define XEMU_RENDERER_LABEL_SV "Grafik-API (starta om)"
-#define XEMU_RENDERER_INFO_0_SV "Den renderare som används för den emulerade GPU:n. Vulkan är standard; OpenGL används när Vulkan inte fungerar korrekt med grafikdrivrutinen. Ändringen börjar gälla när RetroArch har startats om. Android använder alltid Vulkan och macOS alltid OpenGL."
+#define XEMU_RENDERER_INFO_0_SV NULL
 #define OPTION_VAL_VULKAN_SV NULL
 #define OPTION_VAL_OPENGL_SV NULL
 #define XEMU_ASPECT_RATIO_LABEL_SV "Bildformat"
@@ -12405,7 +12405,7 @@ struct retro_core_options_v2 options_val = {
 #define XEMU_HARD_FPU_LABEL_VN "Mô phỏng bộ xử lý dấu phẩy động bằng phần cứng"
 #define XEMU_HARD_FPU_INFO_0_VN "Sử dụng bộ xử lý dấu phẩy động của máy chủ để mô phỏng x87. Tốc độ nhanh hơn nhưng có thể có một số sai lệch nhỏ."
 #define XEMU_RENDERER_LABEL_VN "Giao diện lập trình đồ họa (cần khởi động lại)"
-#define XEMU_RENDERER_INFO_0_VN "Bộ kết xuất được dùng để vẽ hình ảnh từ bộ xử lý đồ họa mô phỏng. Vulkan là lựa chọn mặc định; OpenGL là phương án thay thế cho các trình điều khiển gặp lỗi với Vulkan. Thiết lập có hiệu lực sau khi khởi động lại RetroArch. Trên Android luôn sử dụng Vulkan, trên macOS luôn sử dụng OpenGL."
+#define XEMU_RENDERER_INFO_0_VN NULL
 #define OPTION_VAL_VULKAN_VN NULL
 #define OPTION_VAL_OPENGL_VN NULL
 #define XEMU_ASPECT_RATIO_LABEL_VN "Tỷ lệ khung hình"

@@ -874,6 +874,9 @@ static void migrate_surface_image(SurfaceBinding *dst, SurfaceBinding *src)
 
 static void destroy_surface_image(PGRAPHVkState *r, SurfaceBinding *surface)
 {
+    /* A compositor submission can still be sampling an otherwise expired
+     * surface, even when no main draw command buffer is active. */
+    pgraph_vk_wait_display(r);
     vkDestroyImageView(r->device, surface->image_view, NULL);
     surface->image_view = VK_NULL_HANDLE;
 

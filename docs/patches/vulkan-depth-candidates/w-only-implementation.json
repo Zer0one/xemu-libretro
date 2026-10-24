@@ -1,0 +1,187 @@
+{
+  "core_sha256": "c2392a3257056cea2de514fd87d038c904807cb42fa58f195ebed592b6ce2fd2",
+  "validation": {
+    "errors": 0,
+    "warnings": 10,
+    "khronos_layer": true
+  },
+  "checks": {
+    "w-neutral-baseline": {
+      "core_sha256": "991de76a815edceaabb695ca001507c4a1e8abd6056cb1c3227ead527abd697c",
+      "renderer": "vulkan",
+      "completed": true,
+      "exit_code": 0,
+      "elapsed": 32.934,
+      "reaped": true
+    },
+    "w-neutral-candidate": {
+      "core_sha256": "c2392a3257056cea2de514fd87d038c904807cb42fa58f195ebed592b6ce2fd2",
+      "renderer": "vulkan",
+      "completed": true,
+      "exit_code": 0,
+      "elapsed": 32.663,
+      "reaped": true
+    },
+    "w-neutral-validation": {
+      "core_sha256": "c2392a3257056cea2de514fd87d038c904807cb42fa58f195ebed592b6ce2fd2",
+      "renderer": "vulkan",
+      "completed": true,
+      "exit_code": 0,
+      "elapsed": 10.544,
+      "reaped": true
+    }
+  },
+  "performance": {
+    "w-neutral-baseline": {
+      "windows": [
+        [
+          52.46,
+          45.23,
+          57.02,
+          5.262
+        ],
+        [
+          59.61,
+          59.61,
+          59.61,
+          5.033
+        ],
+        [
+          60.0,
+          60.0,
+          60.0,
+          5.0
+        ],
+        [
+          59.8,
+          59.8,
+          60.0,
+          5.0
+        ],
+        [
+          60.0,
+          60.0,
+          60.0,
+          5.0
+        ],
+        [
+          59.8,
+          59.6,
+          60.0,
+          5.0
+        ]
+      ],
+      "steady_median": 59.9,
+      "steady_range": [
+        59.6,
+        60.0
+      ]
+    },
+    "w-neutral-candidate": {
+      "windows": [
+        [
+          55.53,
+          46.67,
+          59.07,
+          5.079
+        ],
+        [
+          59.6,
+          59.6,
+          59.6,
+          5.033
+        ],
+        [
+          60.0,
+          60.0,
+          60.0,
+          5.0
+        ],
+        [
+          58.61,
+          58.61,
+          59.8,
+          5.016
+        ],
+        [
+          59.2,
+          59.0,
+          59.8,
+          5.017
+        ],
+        [
+          59.21,
+          59.21,
+          59.6,
+          5.033
+        ]
+      ],
+      "steady_median": 59.105000000000004,
+      "steady_range": [
+        58.61,
+        60.0
+      ]
+    }
+  },
+  "shader_checks": {
+    "generated_variants": 24,
+    "unchanged": [
+      "p-hw0-w0-d160-clip0.frag",
+      "p-hw0-w0-d160-clip1.frag",
+      "p-hw0-w0-d161-clip0.frag",
+      "p-hw0-w0-d161-clip1.frag",
+      "p-hw0-w1-d160-clip0.frag",
+      "p-hw0-w1-d160-clip1.frag",
+      "p-hw0-w1-d161-clip0.frag",
+      "p-hw0-w1-d161-clip1.frag",
+      "p-hw1-w0-d160-clip0.frag",
+      "p-hw1-w0-d160-clip1.frag",
+      "p-hw1-w0-d161-clip0.frag",
+      "p-hw1-w0-d161-clip1.frag",
+      "v-ff0-vk0-w0.vert",
+      "v-ff0-vk0-w1.vert",
+      "v-ff0-vk1-w0.vert",
+      "v-ff1-vk0-w0.vert",
+      "v-ff1-vk0-w1.vert",
+      "v-ff1-vk1-w0.vert"
+    ],
+    "changed_only_w_fallback": [
+      "p-hw1-w1-d160-clip0.frag",
+      "p-hw1-w1-d160-clip1.frag",
+      "p-hw1-w1-d161-clip0.frag",
+      "p-hw1-w1-d161-clip1.frag",
+      "v-ff0-vk1-w1.vert",
+      "v-ff1-vk1-w1.vert"
+    ],
+    "spirv_compiled_variants": 20,
+    "fixed_and_programmable_vertices": true,
+    "z_buffer_and_native_geometry_fragments_identical": true
+  },
+  "source_hashes": {
+    "hw/xbox/nv2a/pgraph/glsl/psh.c": "7985f9054f61c02068769148f5e4fb738df2dcb06b151a9f444187374879dfa7",
+    "hw/xbox/nv2a/pgraph/glsl/vsh.c": "eae9f7b22ac49e2adcbe5b7f06ce8ade28da46a0683d88537d17ab5c3ef8d448",
+    "hw/xbox/nv2a/pgraph/glsl/vsh.h": "1523aa30baafd3e9beeb5332db9c6bcd7a2885a8c21d139e9cf56fd23a64a9b4",
+    "hw/xbox/nv2a/pgraph/vk/shaders.c": "54aae4f349ac43bc3efaa0c3966c97eff6239c536ec8b7fa4db1ad5216745324"
+  },
+  "patch_sha256": "d6d3361a0eb2a2a22de632195bab071d558ecb2370c13fc988b47f12c483f896",
+  "head": "ref: refs/heads/main",
+  "scope": "Only no-GS W-buffer vertex/fragment behavior; guest Z-buffer and native GS/OpenGL unchanged.",
+  "limits": [
+    "Bounded snapshot check; not full gameplay or a cross-platform campaign.",
+    "Captures advance from the same snapshot but are not frame/pixel aligned.",
+    "Particle/spark phase differences between captures are not classified as shader defects.",
+    "Exact upstream depth equality remains unqualified at viewport/clipping boundaries."
+  ],
+  "deployment": {
+    "status": "verified",
+    "core_sha256": "c2392a3257056cea2de514fd87d038c904807cb42fa58f195ebed592b6ce2fd2",
+    "receipt": "build/w-buffer-neutral/deployment/receipt.json",
+    "protected_configuration_and_external_system_unchanged": true
+  },
+  "evidence_sha256": {
+    "final-verification.json": "7502be0de9e6c36fc8b72ddb7098f3c62628b554010618f8f9b903a84bd9c8b0",
+    "shader-checks.json": "353c8aa45038ac5bda84dbd3049c47a0ffc427595666686e3ac44d9c24865b2f",
+    "performance.json": "0f4814d727a3312e20e118fae7fef35f2aeb00855d256512c89aac3253db3e3f",
+    "deployment/receipt.json": "65d4263ede7d6f63b48a7f1467e0a1f7667b9de7d8c2f7da7f639af4d3c2019c"
+  }
+}

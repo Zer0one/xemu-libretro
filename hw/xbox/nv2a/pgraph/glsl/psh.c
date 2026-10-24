@@ -152,6 +152,7 @@ void pgraph_glsl_set_psh_state(PGRAPHState *pg, PshState *state)
             color_format ==
                 NV097_SET_TEXTURE_FORMAT_COLOR_LU_IMAGE_DEPTH_X8_Y24_FLOAT;
 
+
         uint32_t border_source =
             GET_MASK(tex_fmt, NV_PGRAPH_TEXFMT0_BORDER_SOURCE);
         bool cubemap = GET_MASK(tex_fmt, NV_PGRAPH_TEXFMT0_CUBEMAPENABLE);
@@ -753,6 +754,20 @@ static void psh_append_shadowmap(const struct PixelShader *ps, int i, bool compa
                            "vec4 t%d_depth = vec4(float(t%d_depth_raw.x >> 8) "
                            "/ 0xFFFFFF, 1.0, 0.0, 0.0);\n",
                            i, i);
+
+        /* Standard Vulkan integer white is 1, not UINT32_MAX. Without
+         * custom border colors, reproduce the guest's depth border here. */
+        if (ps->opts.emulate_int_border) {
+            mstring_append_fmt(
+                vars,
+                "vec3 t%d_coord = %s(pT%d.xyw);\n"
+                "vec2 t%d_uv = t%d_coord.xy / t%d_coord.z;\n"
+                "if (((texBorderAxes[%d] & 1u) != 0u && (t%d_uv.x < 0.0 || t%d_uv.x >= 1.0)) ||\n"
+                "    ((texBorderAxes[%d] & 2u) != 0u && (t%d_uv.y < 0.0 || t%d_uv.y >= 1.0))) {\n"
+                "  t%d_depth.x = texBorderColor[%d].x;\n"
+                "}\n",
+                i, tex_remap, i, i, i, i, i, i, i, i, i, i, i, i);
+        }
     }
 
     // Depth.y != 0 indicates 24 bit; depth.z != 0 indicates float.
@@ -997,6 +1012,32 @@ static MString* psh_convert(struct PixelShader *ps)
         );
 
     MString *clip = mstring_new();
+    if (ps->state->use_hw_depth && ps->state->z_perspective) {
+        /* Match the upstream W expression without a geometry shader.
+         * Evaluate derivatives before window-clip discard. Polygon bias is
+         * zero for points/lines; avoid unnecessary helper-lane derivatives
+         * in that case. Slopes use guest pixels, not scaled host pixels.
+         */
+        mstring_append(
+            clip,
+            "precise float zvalue = 1.0 / gl_FragCoord.w;\n"
+            "float hw_maxSlope = 0.0;\n"
+            "if (depthFactor != 0.0) {\n"
+            "  float hw_dzdx = dFdx(gl_FragCoord.w) * surfaceScale.x;\n"
+            "  float hw_dzdy = dFdy(gl_FragCoord.w) * surfaceScale.y;\n"
+            "  hw_maxSlope = max(abs(hw_dzdx), abs(hw_dzdy));\n"
+            "}\n"
+            "if (zvalue > 0.0) {\n"
+            "  float zslopeofs = depthFactor*hw_maxSlope*zvalue*zvalue;\n"
+            "  zvalue += depthOffset;\n"
+            "  zvalue += zslopeofs;\n"
+            "} else {\n"
+            "  zvalue = uintBitsToFloat(0x7F7FFFFFu);\n"
+            "}\n"
+            "if (isnan(zvalue)) {\n"
+            "  zvalue = uintBitsToFloat(0x7F7FFFFFu);\n"
+            "}\n");
+    }
     mstring_append_fmt(clip, "/*  Window-clip (%slusive) */\n",
                        ps->state->window_clip_exclusive ? "Exc" : "Inc");
     if (!ps->state->window_clip_exclusive) {
@@ -1022,7 +1063,21 @@ static MString* psh_convert(struct PixelShader *ps)
                              "}\n");
     }
 
-    if (ps->state->z_perspective) {
+    if (ps->state->use_hw_depth && !ps->state->z_perspective) {
+        /* When Geometry Shaders are unavailable (e.g. MoltenVK), vtxPos0/1/2
+         * and triMZ cannot be correctly computed per-triangle. Fall back to
+         * hardware-interpolated depth from gl_FragCoord.z, scaled to the
+         * depth range expected by the Xbox NV2A pipeline.
+         * Use dFdx/dFdy to approximate the depth slope that triMZ provides.
+         */
+        mstring_append(clip,
+                       "float zvalue = gl_FragCoord.z * clipRange.y;\n"
+                       "float hw_dzdx = dFdx(gl_FragCoord.z) * clipRange.y;\n"
+                       "float hw_dzdy = dFdy(gl_FragCoord.z) * clipRange.y;\n"
+                       "float hw_maxSlope = max(abs(hw_dzdx), abs(hw_dzdy));\n"
+                       "zvalue += depthOffset;\n"
+                       "zvalue += depthFactor * hw_maxSlope;\n");
+    } else if (!ps->state->use_hw_depth && ps->state->z_perspective) {
         mstring_append(
             clip,
             "vec2 unscaled_xy = gl_FragCoord.xy / surfaceScale;\n"
@@ -1056,7 +1111,7 @@ static MString* psh_convert(struct PixelShader *ps)
             "if (isnan(zvalue)) {\n"
             "  zvalue = uintBitsToFloat(0x7F7FFFFFu);\n"
             "}\n");
-    } else {
+    } else if (!ps->state->use_hw_depth) {
         mstring_append(
             clip,
             "vec2 unscaled_xy = gl_FragCoord.xy / surfaceScale;\n"
@@ -1684,7 +1739,20 @@ void pgraph_glsl_set_psh_uniform_values(PGRAPHState *pg,
     }
 
     for (int i = 0; i < NV2A_MAX_TEXTURES; i++) {
+        if (locs[PshUniform_texBorderAxes] != -1) {
+            uint32_t address = pgraph_reg_r(pg, NV_PGRAPH_TEXADDRESS0 + i * 4);
+            values->texBorderAxes[i] =
+                (GET_MASK(address, NV_PGRAPH_TEXADDRESS0_ADDRU) ==
+                 NV_PGRAPH_TEXADDRESS0_ADDRU_BORDER ? 1 : 0) |
+                (GET_MASK(address, NV_PGRAPH_TEXADDRESS0_ADDRV) ==
+                 NV_PGRAPH_TEXADDRESS0_ADDRU_BORDER ? 2 : 0);
+        }
         /* Bump luminance only during stages 1 - 3 */
+        if (locs[PshUniform_texBorderColor] != -1) {
+            pgraph_argb_pack32_to_rgba_float(
+                pgraph_reg_r(pg, NV_PGRAPH_BORDERCOLOR0 + i * 4),
+                values->texBorderColor[i]);
+        }
         if (i > 0) {
             if (locs[PshUniform_bumpMat] != -1) {
                 uint32_t m_u32[4];

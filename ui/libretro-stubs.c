@@ -21,6 +21,7 @@ typedef struct QEMUFile QEMUFile;
 #include "qemu/option.h"
 #include "qemu/config-file.h"
 #include "qemu/atomic.h"
+#include "migration/qemu-file.h"
 
 #include "xemu-input.h"
 #include "libretro.h"
@@ -289,7 +290,24 @@ void xemu_snapshots_mark_dirty(void)
 
 bool xemu_snapshots_offset_extra_data(QEMUFile *f)
 {
-    (void)f;
+    /* Standalone snapshots prepend UI metadata to the QEMU stream. Like
+     * upstream's reader, also accept raw streams written by this core. */
+    uint32_t magic = qemu_get_be32(f);
+    if (magic != 0x78656d75) { /* 'xemu' */
+        qemu_file_skip(f, -4);
+        return true;
+    }
+
+    qemu_get_be32(f); /* Metadata version; the payload is skipped. */
+    uint32_t remaining = qemu_get_be32(f);
+    uint8_t buffer[4096];
+    while (remaining) {
+        size_t count = MIN(remaining, sizeof(buffer));
+        if (qemu_get_buffer(f, buffer, count) != count) {
+            return false;
+        }
+        remaining -= count;
+    }
     return true;
 }
 

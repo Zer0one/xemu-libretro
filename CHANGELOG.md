@@ -4,7 +4,33 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- Reconstruct guest W depth on Vulkan devices without geometry shaders, using neutral host Z to prevent guest Z from perturbing W interpolation. Preserve guest depth clipping and bias; Z-buffer and native geometry-shader paths retain their existing behavior.
+
+- Correct the grey horizon/building overlay in OutRun 2 on Vulkan devices without custom border colors: packed depth-texture lookups now use the guest's border color outside the selected border axes. Preserve native sampling when the extension is enabled.
+- Respect the enabled portability feature for sampler LOD bias, avoiding invalid sampler creation on MoltenVK devices that do not support it.
+- Keep the APU stopped through snapshot restoration, accept the standalone's snapshot metadata prefix, and log detailed snapshot errors. Save states remain experimental and are still marked unsupported in core metadata.
+
+- Show the core as "Microsoft - Xbox (OG)" in frontend lists and runtime information. Core filenames, option keys and the system/xemu support directory are unchanged.
+- Keep the isolated macOS boot probe's info/cache/log paths private and disable automatic frontend asset extraction, which can otherwise replace installed core metadata during a test.
+
+- macOS: keep the pinned core's symbols local so RetroArch can load it again after content closes. The core remains resident for QEMU's surviving threads without making the frontend mistake a reload for a statically linked core.
+- Restart diagnostic timing windows when content is loaded, avoiding an overflowing changed-picture rate inherited from the previous renderer session.
+
+- Provide an experimental MoltenVK acquisition-fence patch and measured report: OutRun 2 reaches about 60 changed pictures/s with asynchronous host submission in the private Apple M4 probe. The normal core retains synchronous host submission; broader driver validation remains open.
+
+- On a dedicated Vulkan renderer queue, hand the display copy to the frontend through a GPU semaphore without immediately waiting on the CPU. Keep separate compositor command buffers, descriptors and reuse fences per frontend sync index, and drain producer work before destroying its resources. MoltenVK host submission remains synchronous.
+
+- Correct Vulkan API declarations found by validation: enable supported shader demotion and portability texture swizzles, retain a lower SPIR-V target when demotion is unavailable, and declare the compute-output buffer as a transfer source.
+
+- Vulkan diagnostics now distinguish guest scanout flips, changed displayed pictures and frontend calls, so a 60 Hz RetroArch loop cannot be mistaken for 60 FPS gameplay.
+
 - Merge official xemu through `0.8.138-3` (`25e1ee2fd5`), including vertex-register carryover and texture, surface-dirty tracking and Vulkan shader-target fixes. Keep the standalone UI and packaging excluded.
+- Enable Vulkan on macOS through MoltenVK: convert unsupported primitives on the CPU and use hardware depth interpolation when geometry shaders are unavailable. OpenGL remains selectable; NV2A depth and flat-shading parity on the Metal path still need broader testing.
+- Keep frontend drawable waits off the Vulkan renderer queue: use another graphics/compute queue or family when available, with concurrent frame-image sharing, producer semaphores and frontend sync-index waits. MoltenVK requests synchronous host submission per instance, including patched drivers; the combination restores about 60 guest flips/s in the measured OutRun 2 VSync-on probe. Keep the locked shared-queue fallback.
+- Reuse unchanged Vulkan display frames instead of submitting and waiting on an identical image under the emulated GPU's lock. Memory uploads, video overlays, output recreation and changed display uniforms still redraw.
+- macOS: export only the Libretro entry points, preventing incompatible glslang C++ definitions in RetroArch and the core from being coalesced and crashing shader compilation.
+
+- macOS OpenGL: keep the picture working when RetroArch reinitializes video during game boot. The renderer now flushes and releases its old GL objects before worker contexts are replaced, preventing framebuffer assertions and white output observed with OutRun 2 on Apple Silicon.
 
 ## Test build 3 - 2026-10-12
 

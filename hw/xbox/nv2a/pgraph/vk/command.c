@@ -26,6 +26,11 @@ static void create_command_pool(PGRAPHState *pg)
 
     QueueFamilyIndices indices =
         pgraph_vk_find_queue_families(r->physical_device);
+#ifdef LIBRETRO
+    if (xemu_libretro_vk.active && r->device == xemu_libretro_vk.device) {
+        indices.queue_family = xemu_libretro_vk.queue_family;
+    }
+#endif
 
     VkCommandPoolCreateInfo create_info = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
@@ -122,7 +127,9 @@ VkCommandBuffer pgraph_vk_begin_single_time_commands(PGRAPHState *pg)
     return r->aux_command_buffer;
 }
 
-void pgraph_vk_end_single_time_commands(PGRAPHState *pg, VkCommandBuffer cmd)
+void pgraph_vk_end_single_time_commands_signal(PGRAPHState *pg,
+                                               VkCommandBuffer cmd,
+                                               VkSemaphore signal)
 {
     PGRAPHVkState *r = pg->vk_renderer_state;
 
@@ -134,11 +141,18 @@ void pgraph_vk_end_single_time_commands(PGRAPHState *pg, VkCommandBuffer cmd)
         .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
         .commandBufferCount = 1,
         .pCommandBuffers = &cmd,
+        .signalSemaphoreCount = signal != VK_NULL_HANDLE ? 1 : 0,
+        .pSignalSemaphores = &signal,
     };
     pgraph_vk_queue_submit_and_wait(r, 1, &submit_info);
     nv2a_profile_inc_counter(NV2A_PROF_QUEUE_SUBMIT_AUX);
 
     r->in_aux_command_buffer = false;
+}
+
+void pgraph_vk_end_single_time_commands(PGRAPHState *pg, VkCommandBuffer cmd)
+{
+    pgraph_vk_end_single_time_commands_signal(pg, cmd, VK_NULL_HANDLE);
 }
 
 void pgraph_vk_init_command_buffers(PGRAPHState *pg)

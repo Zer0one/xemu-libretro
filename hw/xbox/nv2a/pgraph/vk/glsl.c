@@ -167,6 +167,12 @@ GByteArray *pgraph_vk_compile_glsl_to_spv(PGRAPHVkState *r,
         target_spv = GLSLANG_TARGET_SPV_1_3;
     }
 
+    /* SPIR-V 1.6 lowers discard to DemoteToHelperInvocation, which requires
+     * an explicitly enabled device feature, even on Vulkan 1.3. */
+    if (!r->supports_shader_demote && target_spv > GLSLANG_TARGET_SPV_1_5) {
+        target_spv = GLSLANG_TARGET_SPV_1_5;
+    }
+
     const glslang_input_t input = {
         .language = GLSLANG_SOURCE_GLSL,
         .stage = stage,

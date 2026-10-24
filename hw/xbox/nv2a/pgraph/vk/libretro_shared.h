@@ -35,14 +35,17 @@ typedef struct XemuLibretroVk {
     VkDevice device;
     uint32_t api_version;
 
-    /* The renderer's queue: one of its own where the family has two, else
-     * the frontend's, taken under its lock */
+    /* A dedicated renderer queue where available, using another family if
+     * needed. Otherwise the frontend's queue, taken under its lock. */
     uint32_t queue_family;
+    uint32_t frontend_queue_family;
     VkQueue queue;
     bool queue_shared;
 
     /* What the device was made with */
     VkPhysicalDeviceFeatures features;
+    bool shader_demote;
+    bool sampler_mip_lod_bias;
     bool custom_border_color;
     bool memory_budget;
 
@@ -68,16 +71,19 @@ void xemu_libretro_vk_lock_queue(void);
 void xemu_libretro_vk_unlock_queue(void);
 
 /* The frame image of a sync index: an image on the shared device, in
- * SHADER_READ_ONLY_OPTIMAL, its GPU work finished (ui/libretro.c hands it to
- * the frontend). False until a frame was rendered for that index. *count is
+ * SHADER_READ_ONLY_OPTIMAL once its producer semaphore signals (ui/libretro.c
+ * hands that wait to the frontend). False until a frame was submitted for
+ * that index. *count is
  * the number of frames rendered so far: unchanged since the last call, the
- * display was not rendered again and the image holds an older frame. */
+ * display was not rendered again and the image holds an older frame.
+ * A dedicated queue supplies a binary semaphore for the frontend wait;
+ * the shared-queue fallback completes its work before returning. */
 /* The count of pictures handed over that showed another guest frame than the
  * one before them */
 uint64_t nv2a_vk_libretro_guest_frames(void);
 bool nv2a_vk_libretro_get_frame(int index, VkImage *image, VkImageView *view,
                                 VkFormat *format, int *width, int *height,
-                                uint64_t *count);
+                                uint64_t *count, VkSemaphore *ready);
 
 #endif /* LIBRETRO */
 

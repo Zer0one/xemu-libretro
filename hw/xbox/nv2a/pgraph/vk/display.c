@@ -19,6 +19,7 @@
 
 #include "renderer.h"
 #include <math.h>
+#include "qemu/fast-hash.h"
 
 /* On the device the libretro core shares with its frontend, the display image
  * is a plain image: it is not exported to GL or to a second device */
@@ -63,6 +64,8 @@ static void destroy_pvideo_image(PGRAPHState *pg)
 {
     PGRAPHVkState *r = pg->vk_renderer_state;
     PGRAPHVkDisplayState *d = &r->display;
+
+    pgraph_vk_wait_display(r);
 
     if (d->pvideo.sampler != VK_NULL_HANDLE) {
         vkDestroySampler(r->device, d->pvideo.sampler, NULL);
@@ -253,17 +256,21 @@ static const char *display_frag_glsl =
 static void create_descriptor_pool(PGRAPHState *pg)
 {
     PGRAPHVkState *r = pg->vk_renderer_state;
+    unsigned sets = 1;
+#ifdef LIBRETRO
+    sets += XEMU_LIBRETRO_VK_FRAMES;
+#endif
 
     VkDescriptorPoolSize pool_sizes = {
         .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-        .descriptorCount = 2,
+        .descriptorCount = 2 * sets,
     };
 
     VkDescriptorPoolCreateInfo pool_info = {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
         .poolSizeCount = 1,
         .pPoolSizes = &pool_sizes,
-        .maxSets = 1,
+        .maxSets = sets,
         .flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
     };
     VK_CHECK(vkCreateDescriptorPool(r->device, &pool_info, NULL,
@@ -324,6 +331,13 @@ static void create_descriptor_sets(PGRAPHState *pg)
     };
     VK_CHECK(vkAllocateDescriptorSets(r->device, &alloc_info,
                                       &r->display.descriptor_set));
+#ifdef LIBRETRO
+    for (unsigned i = 0; i < XEMU_LIBRETRO_VK_FRAMES; i++) {
+        VK_CHECK(vkAllocateDescriptorSets(
+            r->device, &alloc_info,
+            &r->display.submissions[i].descriptor_set));
+    }
+#endif
 }
 
 static void create_render_pass(PGRAPHState *pg)
@@ -553,6 +567,7 @@ static void destroy_current_display_image(PGRAPHState *pg)
         return;
     }
 
+    pgraph_vk_wait_display(r);
     destroy_frame_buffer(pg);
 
 #if HAVE_EXTERNAL_MEMORY
@@ -595,6 +610,9 @@ static void create_display_image(PGRAPHState *pg, int width, int height)
 {
     PGRAPHVkState *r = pg->vk_renderer_state;
     PGRAPHVkDisplayState *d = &r->display;
+#ifdef LIBRETRO
+    d->repeated_frame_valid = false;
+#endif
 
     if (r->display.image != VK_NULL_HANDLE) {
         destroy_current_display_image(pg);
@@ -765,7 +783,8 @@ static void create_display_image(PGRAPHState *pg, int width, int height)
     create_frame_buffer(pg);
 }
 
-static void update_descriptor_set(PGRAPHState *pg, SurfaceBinding *surface)
+static void update_descriptor_set(PGRAPHState *pg, SurfaceBinding *surface,
+                                  VkDescriptorSet descriptor_set)
 {
     PGRAPHVkState *r = pg->vk_renderer_state;
 
@@ -780,7 +799,7 @@ static void update_descriptor_set(PGRAPHState *pg, SurfaceBinding *surface)
     };
     descriptor_writes[0] = (VkWriteDescriptorSet){
         .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-        .dstSet = r->display.descriptor_set,
+        .dstSet = descriptor_set,
         .dstBinding = 0,
         .dstArrayElement = 0,
         .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
@@ -806,7 +825,7 @@ static void update_descriptor_set(PGRAPHState *pg, SurfaceBinding *surface)
     }
     descriptor_writes[1] = (VkWriteDescriptorSet){
         .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-        .dstSet = r->display.descriptor_set,
+        .dstSet = descriptor_set,
         .dstBinding = 1,
         .dstArrayElement = 0,
         .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
@@ -946,6 +965,9 @@ static void destroy_frame_image(PGRAPHVkState *r, struct PGRAPHVkFrameImage *f)
         return;
     }
     vkDestroyImageView(r->device, f->view, NULL);
+    if (f->ready_semaphore) {
+        vkDestroySemaphore(r->device, f->ready_semaphore, NULL);
+    }
     vkDestroyImage(r->device, f->image, NULL);
     vkFreeMemory(r->device, f->memory, NULL);
     memset(f, 0, sizeof(*f));
@@ -956,6 +978,9 @@ static void create_frame_image(PGRAPHState *pg, struct PGRAPHVkFrameImage *f,
 {
     PGRAPHVkState *r = pg->vk_renderer_state;
 
+    const uint32_t families[] = { xemu_libretro_vk.queue_family,
+                                 xemu_libretro_vk.frontend_queue_family };
+    const bool concurrent = families[0] != families[1];
     VkImageCreateInfo image_create_info = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
         .imageType = VK_IMAGE_TYPE_2D,
@@ -970,7 +995,10 @@ static void create_frame_image(PGRAPHState *pg, struct PGRAPHVkFrameImage *f,
         .usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
                  VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
         .samples = VK_SAMPLE_COUNT_1_BIT,
-        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .sharingMode = concurrent ? VK_SHARING_MODE_CONCURRENT :
+                                   VK_SHARING_MODE_EXCLUSIVE,
+        .queueFamilyIndexCount = concurrent ? 2 : 0,
+        .pQueueFamilyIndices = concurrent ? families : NULL,
     };
     VK_CHECK(vkCreateImage(r->device, &image_create_info, NULL, &f->image));
 
@@ -997,6 +1025,13 @@ static void create_frame_image(PGRAPHState *pg, struct PGRAPHVkFrameImage *f,
     };
     VK_CHECK(vkCreateImageView(r->device, &image_view_create_info, NULL,
                                &f->view));
+    if (!xemu_libretro_vk.queue_shared) {
+        VkSemaphoreCreateInfo semaphore_info = {
+            .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+        };
+        VK_CHECK(vkCreateSemaphore(r->device, &semaphore_info, NULL,
+                                  &f->ready_semaphore));
+    }
     f->width = width;
     f->height = height;
 }
@@ -1028,9 +1063,9 @@ static void frame_image_barrier(VkCommandBuffer cmd, VkImage image,
 /*
  * The display image, just rendered, copied into the frame image of the
  * frontend's current sync index, in the same command buffer: when it has
- * run - end_single_time_commands waits for it - the frontend has this
- * frame's picture in an image nothing writes to until that index comes
- * round again, by when the frontend is done with it.
+ * run, the frontend has this frame's picture in an image nothing writes to
+ * until that index comes round again, by when the frontend is done with it.
+ * An independent queue signals ready_semaphore instead of waiting on the CPU.
  */
 static void copy_display_to_frame(PGRAPHState *pg, VkCommandBuffer cmd)
 {
@@ -1121,6 +1156,30 @@ static void destroy_frame_images(PGRAPHState *pg)
 }
 #endif /* LIBRETRO */
 
+/* Only the renderer queue produces these fences. Waiting never needs the
+ * frontend to submit work or release its queue lock. Bound even those waits
+ * so a lost GPU cannot leave shutdown blocked indefinitely. */
+static void wait_display_submission(PGRAPHVkState *r, unsigned index)
+{
+#ifdef LIBRETRO
+    if (r->display.submissions[index].pending) {
+        VK_CHECK(vkWaitForFences(r->device, 1,
+                                &r->display.submissions[index].fence,
+                                VK_TRUE, 5ULL * 1000 * 1000 * 1000));
+        r->display.submissions[index].pending = false;
+    }
+#endif
+}
+
+void pgraph_vk_wait_display(PGRAPHVkState *r)
+{
+#ifdef LIBRETRO
+    for (unsigned i = 0; i < XEMU_LIBRETRO_VK_FRAMES; i++) {
+        wait_display_submission(r, i);
+    }
+#endif
+}
+
 static void render_display(PGRAPHState *pg, SurfaceBinding *surface)
 {
     NV2AState *d = container_of(pg, NV2AState, pgraph);
@@ -1132,6 +1191,10 @@ static void render_display(PGRAPHState *pg, SurfaceBinding *surface)
         pgraph_vk_finish(pg, VK_FINISH_REASON_PRESENTING);
     }
 
+#ifdef LIBRETRO
+    bool uploaded = surface->upload_pending || !tcg_enabled();
+    bool had_overlay = disp->pvideo.state.enabled;
+#endif
     pgraph_vk_upload_surface_data(d, surface, !tcg_enabled());
 
     disp->pvideo.state = get_pvideo_state(pg);
@@ -1140,9 +1203,48 @@ static void render_display(PGRAPHState *pg, SurfaceBinding *surface)
     }
 
     update_uniforms(pg, surface);
-    update_descriptor_set(pg, surface);
-
-    VkCommandBuffer cmd = pgraph_vk_begin_single_time_commands(pg);
+#ifdef LIBRETRO
+    /* A duplicate frame belongs to RetroArch. Re-submitting its display copy
+     * on the presentation queue waits for the previous present's VSync while
+     * holding PGRAPH's lock, starving the guest even on an asynchronous driver.
+     * Do not skip RAM uploads, overlays, output recreation or uniform changes.
+     * With a dedicated queue, fill every current sync index instead: repeating
+     * an older index would let the frontend keep reading it after its fence
+     * was waited, while this independent queue overwrites it. */
+    uint64_t uniform_hash = fast_hash(
+        disp->display_frag->push_constants.allocation,
+        disp->display_frag->push_constants.total_size);
+    if (on_frontend_device() && xemu_libretro_vk.queue_shared &&
+        disp->repeated_frame_valid && !uploaded &&
+        !had_overlay && !disp->pvideo.state.enabled &&
+        surface->image == disp->last_surface_image &&
+        surface->vram_addr == disp->last_surface_addr &&
+        surface->draw_time == disp->draw_time &&
+        uniform_hash == disp->last_uniform_hash) {
+        return;
+    }
+#endif
+    VkDescriptorSet descriptor_set = disp->descriptor_set;
+    VkCommandBuffer cmd;
+#ifdef LIBRETRO
+    bool async_display = on_frontend_device() && !xemu_libretro_vk.queue_shared;
+    unsigned index = xemu_libretro_vk.frame_index % XEMU_LIBRETRO_VK_FRAMES;
+    if (async_display) {
+        wait_display_submission(r, index);
+        descriptor_set = disp->submissions[index].descriptor_set;
+        cmd = disp->submissions[index].command_buffer;
+        VK_CHECK(vkResetCommandBuffer(cmd, 0));
+        VkCommandBufferBeginInfo begin_info = {
+            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+            .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+        };
+        VK_CHECK(vkBeginCommandBuffer(cmd, &begin_info));
+    } else
+#endif
+    {
+        cmd = pgraph_vk_begin_single_time_commands(pg);
+    }
+    update_descriptor_set(pg, surface, descriptor_set);
     pgraph_vk_begin_debug_marker(r, cmd, RGBA_YELLOW,
         "Display Surface %08"HWADDR_PRIx, surface->vram_addr);
 
@@ -1150,9 +1252,22 @@ static void render_display(PGRAPHState *pg, SurfaceBinding *surface)
                                       surface->host_fmt.vk_format,
                                       VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                                       VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-    pgraph_vk_transition_image_layout(
-        pg, cmd, disp->image, VK_FORMAT_R8G8B8A8_UNORM,
-        VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+#ifdef LIBRETRO
+    if (async_display) {
+        /* The previous compositor's copy can still be reading this image.
+         * Discard its contents, but order that read before the next render. */
+        frame_image_barrier(cmd, disp->image, VK_IMAGE_LAYOUT_UNDEFINED,
+                            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                            0, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
+    } else
+#endif
+    {
+        pgraph_vk_transition_image_layout(
+            pg, cmd, disp->image, VK_FORMAT_R8G8B8A8_UNORM,
+            VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+    }
 
     VkRenderPassBeginInfo render_pass_begin_info = {
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
@@ -1167,7 +1282,7 @@ static void render_display(PGRAPHState *pg, SurfaceBinding *surface)
                       disp->pipeline);
 
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                            disp->pipeline_layout, 0, 1, &disp->descriptor_set,
+                            disp->pipeline_layout, 0, 1, &descriptor_set,
                             0, NULL);
 
     VkViewport viewport = {
@@ -1227,12 +1342,38 @@ static void render_display(PGRAPHState *pg, SurfaceBinding *surface)
             disp->guest_frame_count++;
         }
         disp->last_surface_addr = surface->vram_addr;
+        disp->last_surface_image = surface->image;
+        disp->last_uniform_hash = uniform_hash;
+        disp->repeated_frame_valid = true;
         copy_display_to_frame(pg, cmd);
     }
 #endif
 
     pgraph_vk_end_debug_marker(r, cmd);
+#ifdef LIBRETRO
+    VkSemaphore ready = on_frontend_device() ?
+        disp->frames[xemu_libretro_vk.frame_index % XEMU_LIBRETRO_VK_FRAMES].ready_semaphore :
+        VK_NULL_HANDLE;
+    if (async_display) {
+        VK_CHECK(vkEndCommandBuffer(cmd));
+        VK_CHECK(vkResetFences(r->device, 1, &disp->submissions[index].fence));
+        VkSubmitInfo submit_info = {
+            .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+            .commandBufferCount = 1,
+            .pCommandBuffers = &cmd,
+            .signalSemaphoreCount = 1,
+            .pSignalSemaphores = &ready,
+        };
+        pgraph_vk_queue_submit(r, 1, &submit_info,
+                               disp->submissions[index].fence);
+        disp->submissions[index].pending = true;
+        nv2a_profile_inc_counter(NV2A_PROF_QUEUE_SUBMIT_AUX);
+    } else {
+        pgraph_vk_end_single_time_commands_signal(pg, cmd, ready);
+    }
+#else
     pgraph_vk_end_single_time_commands(pg, cmd);
+#endif
     nv2a_profile_inc_counter(NV2A_PROF_QUEUE_SUBMIT_5);
 
     disp->draw_time = surface->draw_time;
@@ -1277,12 +1418,38 @@ void pgraph_vk_init_display(PGRAPHState *pg)
     create_render_pass(pg);
     create_display_pipeline(pg);
     create_surface_sampler(pg);
+#ifdef LIBRETRO
+    PGRAPHVkState *r = pg->vk_renderer_state;
+    for (unsigned i = 0; i < XEMU_LIBRETRO_VK_FRAMES; i++) {
+        VkCommandBufferAllocateInfo alloc_info = {
+            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+            .commandPool = r->command_pool,
+            .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+            .commandBufferCount = 1,
+        };
+        VK_CHECK(vkAllocateCommandBuffers(
+            r->device, &alloc_info, &r->display.submissions[i].command_buffer));
+        VkFenceCreateInfo fence_info = {
+            .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+        };
+        VK_CHECK(vkCreateFence(r->device, &fence_info, NULL,
+                               &r->display.submissions[i].fence));
+    }
+#endif
 }
 
 void pgraph_vk_finalize_display(PGRAPHState *pg)
 {
     PGRAPHVkState *r = pg->vk_renderer_state;
 
+    pgraph_vk_wait_display(r);
+#ifdef LIBRETRO
+    for (unsigned i = 0; i < XEMU_LIBRETRO_VK_FRAMES; i++) {
+        vkDestroyFence(r->device, r->display.submissions[i].fence, NULL);
+        vkFreeCommandBuffers(r->device, r->command_pool, 1,
+                              &r->display.submissions[i].command_buffer);
+    }
+#endif
     destroy_pvideo_image(pg);
 
     if (r->display.image != VK_NULL_HANDLE) {

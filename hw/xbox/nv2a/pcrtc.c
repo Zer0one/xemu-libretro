@@ -21,6 +21,15 @@
 
 #include "nv2a_int.h"
 
+#ifdef LIBRETRO
+static uint64_t libretro_scanout_flips;
+
+uint64_t nv2a_libretro_scanout_flips(void)
+{
+    return qatomic_read(&libretro_scanout_flips);
+}
+#endif
+
 uint64_t pcrtc_read(void *opaque, hwaddr addr, unsigned int size)
 {
     NV2AState *d = (NV2AState *)opaque;
@@ -66,6 +75,9 @@ void pcrtc_write(void *opaque, hwaddr addr, uint64_t val, unsigned int size)
         val &= 0x07FFFFFF;
         // assert(val < memory_region_size(d->vram));
         d->pcrtc.start = val;
+#ifdef LIBRETRO
+        qatomic_inc(&libretro_scanout_flips);
+#endif
 
         NV2A_DPRINTF("PCRTC_START - %x %x %x %x\n",
                 d->vram_ptr[val+64], d->vram_ptr[val+64+1],

@@ -1,0 +1,110 @@
+--- a/hw/xbox/nv2a/pgraph/glsl/psh.c
++++ b/hw/xbox/nv2a/pgraph/glsl/psh.c
+@@ -1012,6 +1012,32 @@
+         );
+ 
+     MString *clip = mstring_new();
++    if (ps->state->use_hw_depth && ps->state->z_perspective) {
++        /* Match the upstream W expression without a geometry shader.
++         * Evaluate derivatives before window-clip discard. Polygon bias is
++         * zero for points/lines; avoid unnecessary helper-lane derivatives
++         * in that case. Slopes use guest pixels, not scaled host pixels.
++         */
++        mstring_append(
++            clip,
++            "precise float zvalue = 1.0 / gl_FragCoord.w;\n"
++            "float hw_maxSlope = 0.0;\n"
++            "if (depthFactor != 0.0) {\n"
++            "  float hw_dzdx = dFdx(gl_FragCoord.w) * surfaceScale.x;\n"
++            "  float hw_dzdy = dFdy(gl_FragCoord.w) * surfaceScale.y;\n"
++            "  hw_maxSlope = max(abs(hw_dzdx), abs(hw_dzdy));\n"
++            "}\n"
++            "if (zvalue > 0.0) {\n"
++            "  float zslopeofs = depthFactor*hw_maxSlope*zvalue*zvalue;\n"
++            "  zvalue += depthOffset;\n"
++            "  zvalue += zslopeofs;\n"
++            "} else {\n"
++            "  zvalue = uintBitsToFloat(0x7F7FFFFFu);\n"
++            "}\n"
++            "if (isnan(zvalue)) {\n"
++            "  zvalue = uintBitsToFloat(0x7F7FFFFFu);\n"
++            "}\n");
++    }
+     mstring_append_fmt(clip, "/*  Window-clip (%slusive) */\n",
+                        ps->state->window_clip_exclusive ? "Exc" : "Inc");
+     if (!ps->state->window_clip_exclusive) {
+@@ -1037,7 +1063,7 @@
+                              "}\n");
+     }
+ 
+-    if (ps->state->use_hw_depth) {
++    if (ps->state->use_hw_depth && !ps->state->z_perspective) {
+         /* When Geometry Shaders are unavailable (e.g. MoltenVK), vtxPos0/1/2
+          * and triMZ cannot be correctly computed per-triangle. Fall back to
+          * hardware-interpolated depth from gl_FragCoord.z, scaled to the
+@@ -1051,7 +1077,7 @@
+                        "float hw_maxSlope = max(abs(hw_dzdx), abs(hw_dzdy));\n"
+                        "zvalue += depthOffset;\n"
+                        "zvalue += depthFactor * hw_maxSlope;\n");
+-    } else if (ps->state->z_perspective) {
++    } else if (!ps->state->use_hw_depth && ps->state->z_perspective) {
+         mstring_append(
+             clip,
+             "vec2 unscaled_xy = gl_FragCoord.xy / surfaceScale;\n"
+@@ -1085,7 +1111,7 @@
+             "if (isnan(zvalue)) {\n"
+             "  zvalue = uintBitsToFloat(0x7F7FFFFFu);\n"
+             "}\n");
+-    } else {
++    } else if (!ps->state->use_hw_depth) {
+         mstring_append(
+             clip,
+             "vec2 unscaled_xy = gl_FragCoord.xy / surfaceScale;\n"
+--- a/hw/xbox/nv2a/pgraph/glsl/vsh.c
++++ b/hw/xbox/nv2a/pgraph/glsl/vsh.c
+@@ -435,6 +435,14 @@
+         );
+     }
+ 
++    if (opts.use_hw_w_depth) {
++        /* Guest W depth is written by the fragment shader. Keep host Z
++         * inside the clip volume so it cannot perturb W interpolation.
++         * vtxPos and the other guest outputs above retain their values.
++         */
++        mstring_append(body, "  oPos.z = 0.5 * oPos.w;\n");
++    }
++
+     if (opts.vulkan) {
+         mstring_append(body,
+                    "  gl_Position = oPos;\n"
+--- a/hw/xbox/nv2a/pgraph/glsl/vsh.h
++++ b/hw/xbox/nv2a/pgraph/glsl/vsh.h
+@@ -101,6 +101,7 @@
+     bool vulkan;
+     bool prefix_outputs;
+     bool use_push_constants_for_uniform_attrs;
++    bool use_hw_w_depth;
+     int ubo_binding;
+ } GenVshGlslOptions;
+ 
+--- a/hw/xbox/nv2a/pgraph/vk/shaders.c
++++ b/hw/xbox/nv2a/pgraph/vk/shaders.c
+@@ -290,14 +290,16 @@
+     key.vsh.glsl_opts.prefix_outputs = need_geometry_shader;
+     key.vsh.glsl_opts.use_push_constants_for_uniform_attrs =
+         r->use_push_constants_for_uniform_attrs;
++    key.vsh.glsl_opts.use_hw_w_depth =
++        !r->supports_geometry_shaders && binding->state.psh.z_perspective;
+     key.vsh.glsl_opts.ubo_binding = VSH_UBO_BINDING;
+     binding->vsh.module_info = get_and_ref_shader_module_for_key(r, &key);
+ 
+     memset(&key, 0, sizeof(key));
+     key.kind = VK_SHADER_STAGE_FRAGMENT_BIT;
+     key.psh.state = binding->state.psh;
+-    // Tell the fragment shader to fallback to hardware depth interpolation
+-    // (gl_FragCoord.z) if Geometry Shaders were bypassed (like on macOS).
++    // Without geometry shaders, use rasterizer Z or reciprocal W according
++    // to the guest depth mode. The matching W vertex variant uses neutral Z.
+     key.psh.state.use_hw_depth = !r->supports_geometry_shaders;
+     key.psh.glsl_opts.vulkan = true;
+     key.psh.glsl_opts.emulate_int_border =

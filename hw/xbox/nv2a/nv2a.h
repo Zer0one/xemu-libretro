@@ -26,6 +26,8 @@ void nv2a_context_init(void);
 int nv2a_get_framebuffer_surface(void);
 void nv2a_release_framebuffer_surface(void);
 #ifdef LIBRETRO
+/* Guest CRTC start writes, matching MJR query-xemu-display.flips. */
+uint64_t nv2a_libretro_scanout_flips(void);
 /* VK display info for libretro VK HW render interface.
  * Only valid while framebuffer is in use (between get/release calls). */
 void nv2a_get_vk_display_info(void **out_handle, int *out_width, int *out_height);

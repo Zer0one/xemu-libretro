@@ -207,10 +207,15 @@ void pgraph_vk_update_descriptor_sets(PGRAPHState *pg)
 
     VkDescriptorImageInfo image_infos[NV2A_MAX_TEXTURES];
     for (int i = 0; i < NV2A_MAX_TEXTURES; i++) {
+            TextureBinding *tex_binding = r->texture_bindings[i];
+        if (!tex_binding) {
+            tex_binding = &r->dummy_texture;
+        }
+
         image_infos[i] = (VkDescriptorImageInfo){
             .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-            .imageView = r->texture_bindings[i]->image_view,
-            .sampler = r->texture_bindings[i]->sampler,
+            .imageView = tex_binding->image_view,
+            .sampler = tex_binding->sampler,
         };
         descriptor_writes[2 + i] = (VkWriteDescriptorSet){
             .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
@@ -264,7 +269,10 @@ static void shader_cache_entry_init(Lru *lru, LruNode *node, const void *state)
 
     ShaderModuleCacheKey key;
 
-    bool need_geometry_shader = pgraph_glsl_need_geom(&binding->state.geom);
+    /* Devices without geometry shaders use CPU primitive conversion and
+     * hardware depth interpolation instead of the NV2A depth-plane shader. */
+    bool need_geometry_shader = r->supports_geometry_shaders &&
+                                pgraph_glsl_need_geom(&binding->state.geom);
     if (need_geometry_shader) {
         memset(&key, 0, sizeof(key));
         key.kind = VK_SHADER_STAGE_GEOMETRY_BIT;
@@ -282,13 +290,20 @@ static void shader_cache_entry_init(Lru *lru, LruNode *node, const void *state)
     key.vsh.glsl_opts.prefix_outputs = need_geometry_shader;
     key.vsh.glsl_opts.use_push_constants_for_uniform_attrs =
         r->use_push_constants_for_uniform_attrs;
+    key.vsh.glsl_opts.use_hw_w_depth =
+        !r->supports_geometry_shaders && binding->state.psh.z_perspective;
     key.vsh.glsl_opts.ubo_binding = VSH_UBO_BINDING;
     binding->vsh.module_info = get_and_ref_shader_module_for_key(r, &key);
 
     memset(&key, 0, sizeof(key));
     key.kind = VK_SHADER_STAGE_FRAGMENT_BIT;
     key.psh.state = binding->state.psh;
+    // Without geometry shaders, use rasterizer Z or reciprocal W according
+    // to the guest depth mode. The matching W vertex variant uses neutral Z.
+    key.psh.state.use_hw_depth = !r->supports_geometry_shaders;
     key.psh.glsl_opts.vulkan = true;
+    key.psh.glsl_opts.emulate_int_border =
+        !r->custom_border_color_extension_enabled;
     key.psh.glsl_opts.ubo_binding = PSH_UBO_BINDING;
     key.psh.glsl_opts.tex_binding = PSH_TEX_BINDING;
     binding->psh.module_info = get_and_ref_shader_module_for_key(r, &key);

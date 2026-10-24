@@ -253,7 +253,7 @@ uint64_t nv2a_vk_libretro_guest_frames(void)
 
 bool nv2a_vk_libretro_get_frame(int index, VkImage *image, VkImageView *view,
                                 VkFormat *format, int *width, int *height,
-                                uint64_t *count)
+                                uint64_t *count, VkSemaphore *ready)
 {
     NV2AState *d = g_nv2a;
     PGRAPHVkState *r = d ? d->pgraph.vk_renderer_state : NULL;
@@ -273,6 +273,7 @@ bool nv2a_vk_libretro_get_frame(int index, VkImage *image, VkImageView *view,
     *format = VK_FORMAT_R8G8B8A8_UNORM;
     *width = f->width;
     *height = f->height;
+    *ready = f->ready_semaphore;
     return true;
 }
 

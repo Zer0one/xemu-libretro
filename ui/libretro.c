@@ -30,6 +30,9 @@
 #if defined(_WIN32) && !defined(VK_USE_PLATFORM_WIN32_KHR)
 #define VK_USE_PLATFORM_WIN32_KHR
 #endif
+#ifndef VK_ENABLE_BETA_EXTENSIONS
+#define VK_ENABLE_BETA_EXTENSIONS
+#endif
 #include "libretro_vulkan.h"
 #include "hw/xbox/nv2a/pgraph/vk/libretro_shared.h"
 #include "libretro_core_options.h"
@@ -147,7 +150,10 @@ static bool emu_initialized = false;
 /* QEMU was started in this process (retro_load_game), and with which
  * renderer: the machine stays built, and the next content runs on it */
 static bool emu_started_once = false;
+/* Frontend timing windows must not span different content sessions. */
+static bool reset_run_tracking;
 static bool emu_started_vulkan = false;
+static bool gl_renderer_parked = false;
 static QemuThread emu_thread;
 static volatile bool emu_thread_running = false;
 
@@ -652,6 +658,80 @@ static bool xemu_vk_has_ext(const VkExtensionProperties *props, uint32_t count, 
     return false;
 }
 
+static VkInstance xemu_vk_create_instance(
+    PFN_vkGetInstanceProcAddr get_instance_proc_addr,
+    const VkApplicationInfo* app,
+    VkInstance (*create_instance_wrapper)(void*, const VkInstanceCreateInfo*),
+    void* opaque) {
+    VkInstanceCreateInfo info = {VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
+    info.pApplicationInfo = app;
+#ifdef __APPLE__
+    // Identify the provider selected by the frontend for configuration and
+    // diagnostics. A process-wide lookup could identify a different copy.
+    PFN_vkVoidFunction query_config = get_instance_proc_addr(
+        VK_NULL_HANDLE, "vkGetMoltenVKConfigurationMVK");
+    if (query_config) {
+        uint32_t patch_version = 0;
+        Dl_info provider = {0};
+        if (dladdr((void *)query_config, &provider) &&
+            provider.dli_fname) {
+            void *library = dlopen(provider.dli_fname,
+                                   RTLD_LAZY | RTLD_LOCAL | RTLD_NOLOAD);
+            if (library) {
+                typedef uint32_t (*PatchVersion)(void);
+                PatchVersion version = (PatchVersion)dlsym(
+                    library, "xeniaMoltenVKDrawableOwnershipPatchVersion");
+                Dl_info marker_provider = {0};
+                if (version && dladdr((void *)version,
+                                      &marker_provider) &&
+                    marker_provider.dli_fbase == provider.dli_fbase) {
+                    patch_version = version();
+                }
+                dlclose(library);
+            }
+        }
+        PFN_vkEnumerateInstanceExtensionProperties enumerate =
+            (PFN_vkEnumerateInstanceExtensionProperties)get_instance_proc_addr(
+                VK_NULL_HANDLE, "vkEnumerateInstanceExtensionProperties");
+        uint32_t count = 0;
+        bool layer_settings = false;
+        if (enumerate && enumerate(NULL, &count, NULL) == VK_SUCCESS) {
+            VkExtensionProperties *extensions = g_new0(VkExtensionProperties, count);
+            if (enumerate(NULL, &count, extensions) == VK_SUCCESS) {
+                layer_settings = xemu_vk_has_ext(extensions, count,
+                                                 VK_EXT_LAYER_SETTINGS_EXTENSION_NAME);
+            }
+            g_free(extensions);
+        }
+        if (layer_settings) {
+            // Keep MoltenVK's synchronous default with the installed drawable
+            // ownership patch. Its marker alone does not identify the separate
+            // acquisition-fence experiment in docs/libretro-vulkan-acquire-fence.md.
+            // A dedicated renderer queue keeps frontend drawable acquisition
+            // from blocking the renderer's submissions.
+            VkBool32 synchronous = VK_TRUE;
+            VkLayerSettingEXT setting = {
+                "MoltenVK", "MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS",
+                VK_LAYER_SETTING_TYPE_BOOL32_EXT, 1, &synchronous};
+            VkLayerSettingsCreateInfoEXT settings = {
+                VK_STRUCTURE_TYPE_LAYER_SETTINGS_CREATE_INFO_EXT,
+                NULL, 1, &setting};
+            const char* extension = VK_EXT_LAYER_SETTINGS_EXTENSION_NAME;
+            info.pNext = &settings;
+            info.enabledExtensionCount = 1;
+            info.ppEnabledExtensionNames = &extension;
+            LRLOG_INFO("[xemu] MoltenVK: drawable ownership patch %u, synchronous host submission; provider %s\n",
+                       patch_version,
+                       provider.dli_fname ? provider.dli_fname : "unknown");
+            return create_instance_wrapper(opaque, &info);
+        }
+        LRLOG_WARN("[xemu] MoltenVK: VK_EXT_layer_settings unavailable; retaining driver defaults\n");
+    }
+#endif
+    return create_instance_wrapper(opaque, &info);
+}
+
+
 static bool xemu_vk_create_device(struct retro_vulkan_context *context,
     VkInstance instance, VkPhysicalDevice gpu, VkSurfaceKHR surface,
     PFN_vkGetInstanceProcAddr gipa,
@@ -662,6 +742,8 @@ static bool xemu_vk_create_device(struct retro_vulkan_context *context,
 #define XEMU_VK_LOAD(name) PFN_##name p_##name = (PFN_##name)gipa(instance, #name)
     XEMU_VK_LOAD(vkEnumeratePhysicalDevices);
     XEMU_VK_LOAD(vkGetPhysicalDeviceFeatures);
+    XEMU_VK_LOAD(vkGetPhysicalDeviceFeatures2);
+    XEMU_VK_LOAD(vkGetPhysicalDeviceProperties);
     XEMU_VK_LOAD(vkGetPhysicalDeviceQueueFamilyProperties);
     XEMU_VK_LOAD(vkGetPhysicalDeviceSurfaceSupportKHR);
     XEMU_VK_LOAD(vkEnumerateDeviceExtensionProperties);
@@ -670,6 +752,7 @@ static bool xemu_vk_create_device(struct retro_vulkan_context *context,
 #undef XEMU_VK_LOAD
     memset(&xemu_libretro_vk, 0, sizeof(xemu_libretro_vk));
     if (!p_vkEnumeratePhysicalDevices || !p_vkGetPhysicalDeviceFeatures ||
+        !p_vkGetPhysicalDeviceFeatures2 || !p_vkGetPhysicalDeviceProperties ||
         !p_vkGetPhysicalDeviceQueueFamilyProperties ||
         !p_vkEnumerateDeviceExtensionProperties || !p_vkCreateDevice || !p_vkGetDeviceProcAddr) {
         return false;
@@ -703,6 +786,17 @@ static bool xemu_vk_create_device(struct retro_vulkan_context *context,
             family_queues = qprops[i].queueCount;
         }
     }
+    uint32_t renderer_family = family;
+    if (family != UINT32_MAX && family_queues < 2) {
+        for (uint32_t i = 0; i < qcount; i++) {
+            const VkQueueFlags want = VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT;
+            if (i != family && qprops[i].queueCount &&
+                (qprops[i].queueFlags & want) == want) {
+                renderer_family = i;
+                break;
+            }
+        }
+    }
     g_free(qprops);
     if (family == UINT32_MAX) {
         LRLOG_ERROR("[xemu] Vulkan: no queue family for graphics, compute and present\n");
@@ -719,6 +813,7 @@ static bool xemu_vk_create_device(struct retro_vulkan_context *context,
     static const char *const own_exts[] = {
         VK_EXT_CUSTOM_BORDER_COLOR_EXTENSION_NAME,
         VK_EXT_MEMORY_BUDGET_EXTENSION_NAME,
+        "VK_KHR_portability_subset",
     };
     bool own_ext_enabled[G_N_ELEMENTS(own_exts)] = { false };
     const char **exts = g_new0(const char *, num_required_exts + G_N_ELEMENTS(own_exts));
@@ -742,17 +837,23 @@ static bool xemu_vk_create_device(struct retro_vulkan_context *context,
     }
     g_free(eprops);
 
-    /* A queue of its own for the renderer where the family has a second
-     * one: it submits many times a frame, and the frontend holds its queue's
-     * lock while it presents */
-    const bool own_queue = family_queues >= 2;
+    /* Keep drawable acquisition off the renderer's submission queue. Prefer
+     * a second queue in the same family, then another graphics/compute family.
+     * Frame images use concurrent sharing when the families differ. */
+    const bool other_family = renderer_family != family;
+    const bool own_queue = other_family || family_queues >= 2;
     const float priorities[2] = { 1.0f, 1.0f };
-    VkDeviceQueueCreateInfo queue_ci = {
+    VkDeviceQueueCreateInfo queue_ci[2] = {{
         .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
         .queueFamilyIndex = family,
-        .queueCount = own_queue ? 2 : 1,
+        .queueCount = own_queue && !other_family ? 2 : 1,
         .pQueuePriorities = priorities,
-    };
+    }, {
+        .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+        .queueFamilyIndex = renderer_family,
+        .queueCount = 1,
+        .pQueuePriorities = priorities,
+    }};
 
     /* The frontend's features and the renderer's (create_logical_device) */
     VkPhysicalDeviceFeatures available = {0};
@@ -771,6 +872,15 @@ static bool xemu_vk_create_device(struct retro_vulkan_context *context,
             renderer_features = false; \
         } \
     } while (0)
+#ifdef __APPLE__
+    XEMU_VK_FEATURE(depthClamp, false);
+    XEMU_VK_FEATURE(fillModeNonSolid, false);
+    XEMU_VK_FEATURE(geometryShader, false);
+    XEMU_VK_FEATURE(occlusionQueryPrecise, false);
+    XEMU_VK_FEATURE(samplerAnisotropy, false);
+    XEMU_VK_FEATURE(shaderClipDistance, true);
+    XEMU_VK_FEATURE(shaderTessellationAndGeometryPointSize, false);
+#else
     XEMU_VK_FEATURE(depthClamp, true);
     XEMU_VK_FEATURE(fillModeNonSolid, true);
     XEMU_VK_FEATURE(geometryShader, true);
@@ -778,6 +888,7 @@ static bool xemu_vk_create_device(struct retro_vulkan_context *context,
     XEMU_VK_FEATURE(samplerAnisotropy, false);
     XEMU_VK_FEATURE(shaderClipDistance, true);
     XEMU_VK_FEATURE(shaderTessellationAndGeometryPointSize, true);
+#endif
     XEMU_VK_FEATURE(wideLines, false);
 #undef XEMU_VK_FEATURE
     if (!renderer_features) {
@@ -789,11 +900,50 @@ static bool xemu_vk_create_device(struct retro_vulkan_context *context,
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CUSTOM_BORDER_COLOR_FEATURES_EXT,
         .customBorderColors = VK_TRUE,
     };
+    VkPhysicalDevicePortabilitySubsetFeaturesKHR portability_features = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PORTABILITY_SUBSET_FEATURES_KHR,
+    };
+    VkPhysicalDeviceShaderDemoteToHelperInvocationFeatures demote_features = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_DEMOTE_TO_HELPER_INVOCATION_FEATURES,
+    };
+    VkPhysicalDeviceProperties properties = {0};
+    p_vkGetPhysicalDeviceProperties(gpu, &properties);
+    VkPhysicalDeviceFeatures2 extra_features = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+    };
+    if (properties.apiVersion >= VK_API_VERSION_1_3) {
+        extra_features.pNext = &demote_features;
+    }
+    if (own_ext_enabled[2]) {
+        portability_features.pNext = extra_features.pNext;
+        extra_features.pNext = &portability_features;
+    }
+    p_vkGetPhysicalDeviceFeatures2(gpu, &extra_features);
+    if (own_ext_enabled[2] && !portability_features.imageViewFormatSwizzle) {
+        LRLOG_ERROR("[xemu] Vulkan: portability device cannot swizzle texture views\n");
+        g_free(exts);
+        return false;
+    }
+    /* Enable supported portability features used by texture views/samplers. */
+    VkPhysicalDevicePortabilitySubsetFeaturesKHR enabled_portability = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PORTABILITY_SUBSET_FEATURES_KHR,
+        .imageViewFormatSwizzle = portability_features.imageViewFormatSwizzle,
+        .samplerMipLodBias = portability_features.samplerMipLodBias,
+    };
+    void *device_next = own_ext_enabled[0] ? &custom_border_features : NULL;
+    if (properties.apiVersion >= VK_API_VERSION_1_3) {
+        demote_features.pNext = device_next;
+        device_next = &demote_features;
+    }
+    if (own_ext_enabled[2]) {
+        enabled_portability.pNext = device_next;
+        device_next = &enabled_portability;
+    }
     VkDeviceCreateInfo device_ci = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-        .pNext = own_ext_enabled[0] ? &custom_border_features : NULL,
-        .queueCreateInfoCount = 1,
-        .pQueueCreateInfos = &queue_ci,
+        .pNext = device_next,
+        .queueCreateInfoCount = other_family ? 2 : 1,
+        .pQueueCreateInfos = queue_ci,
         .enabledLayerCount = num_required_layers,
         .ppEnabledLayerNames = required_layers,
         .enabledExtensionCount = nexts,
@@ -826,19 +976,25 @@ static bool xemu_vk_create_device(struct retro_vulkan_context *context,
     xemu_libretro_vk.gpu = gpu;
     xemu_libretro_vk.device = device;
     xemu_libretro_vk.api_version = xemu_vk_app_info.apiVersion;
-    xemu_libretro_vk.queue_family = family;
+    xemu_libretro_vk.queue_family = renderer_family;
+    xemu_libretro_vk.frontend_queue_family = family;
     xemu_libretro_vk.queue = queue;
     xemu_libretro_vk.queue_shared = !own_queue;
     if (own_queue) {
-        p_vkGetDeviceQueue(device, family, 1, &xemu_libretro_vk.queue);
+        p_vkGetDeviceQueue(device, renderer_family, other_family ? 0 : 1,
+                          &xemu_libretro_vk.queue);
     }
     xemu_libretro_vk.features = features;
+    xemu_libretro_vk.shader_demote = demote_features.shaderDemoteToHelperInvocation;
+    xemu_libretro_vk.sampler_mip_lod_bias =
+        !own_ext_enabled[2] || enabled_portability.samplerMipLodBias;
     xemu_libretro_vk.custom_border_color = own_ext_enabled[0];
     xemu_libretro_vk.memory_budget = own_ext_enabled[1];
     xemu_libretro_vk.active = true;
 
-    LRLOG_INFO("[xemu] Vulkan: device shared with the frontend, queue family %u (%s), %u extensions\n",
-               family, own_queue ? "a queue of its own" : "the frontend's queue", nexts);
+    LRLOG_INFO("[xemu] Vulkan: device shared with the frontend, renderer family %u, frontend family %u (%s), %u extensions\n",
+               renderer_family, family,
+               own_queue ? "a queue of its own" : "the frontend's queue", nexts);
     return true;
 }
 
@@ -869,6 +1025,8 @@ static const struct retro_hw_render_context_negotiation_interface_vulkan xemu_vk
     xemu_vk_get_application_info,
     xemu_vk_create_device,
     NULL, /* destroy_device: nothing of our own on the device */
+    xemu_vk_create_instance,
+    NULL, /* create_device2: the v1 device callback supplies renderer features */
 };
 
 /* ========================================================================= */
@@ -887,6 +1045,16 @@ static void context_reset(void)
         libretro_gl_prepare();
         nv2a_context_init();
         libretro_gl_wake_pfifo();
+        if (gl_renderer_parked) {
+            /* Resume through standalone's renderer switch, after creating
+             * worker contexts shared with the new frontend context. */
+            if (!nv2a_libretro_switch_renderer(CONFIG_DISPLAY_RENDERER_OPENGL)) {
+                LRLOG_ERROR("[xemu] OpenGL renderer restart failed\n");
+                return;
+            }
+            gl_renderer_parked = false;
+            LRLOG_INFO("[xemu] OpenGL renderer restarted\n");
+        }
     } else {
         if (environ_cb) {
             struct retro_hw_render_interface *iface = NULL;
@@ -956,6 +1124,12 @@ static void context_destroy(void)
     }
 
     if (!use_vulkan) {
+        /* Flush surfaces and finalize FBOs/VAOs in their original contexts,
+         * before the frontend tears down the GL share group. */
+        if (nv2a_libretro_switch_renderer(CONFIG_DISPLAY_RENDERER_NULL)) {
+            gl_renderer_parked = true;
+            LRLOG_INFO("[xemu] OpenGL renderer parked before context destruction\n");
+        }
         destroy_blit_resources();
     }
 
@@ -1324,6 +1498,8 @@ static void *emu_thread_func(void *opaque)
             if (req == SNAPSHOT_SAVE) {
                 ok = save_snapshot("libretro_save", true, NULL, false, NULL, &snap_err);
                 if (!ok && snap_err) {
+                    LRLOG_ERROR("[xemu] snapshot save: %s\n",
+                                error_get_pretty(snap_err));
                     error_free(snap_err);
                 }
             } else if (req == SNAPSHOT_LOAD) {
@@ -1334,6 +1510,8 @@ static void *emu_thread_func(void *opaque)
                     vm_start();
                 } else if (!ok) {
                     if (snap_err) {
+                        LRLOG_ERROR("[xemu] snapshot load: %s\n",
+                                    error_get_pretty(snap_err));
                         error_free(snap_err);
                     }
                     if (was_running) vm_start();
@@ -1455,7 +1633,7 @@ RETRO_API unsigned retro_api_version(void)
 RETRO_API void retro_get_system_info(struct retro_system_info *info)
 {
     memset(info, 0, sizeof(*info));
-    info->library_name     = "xemu";
+    info->library_name     = "Microsoft - Xbox (OG)";
     info->library_version  = xemu_libretro_version;
     info->valid_extensions = "iso|xiso";
     info->need_fullpath    = true;
@@ -1510,9 +1688,12 @@ RETRO_API void retro_init(void)
 #else
         Dl_info info;
         /* A reference that is never dropped; RTLD_NODELETE keeps the
-         * object even past it */
+         * object even past it. Keep its symbols local: macOS defaults to
+         * GLOBAL, which makes RetroArch mistake a later reload for a
+         * statically linked core when it finds retro_init in RTLD_DEFAULT. */
         if (!dladdr((void *)retro_init, &info) || !info.dli_fname ||
-            !dlopen(info.dli_fname, RTLD_NOW | RTLD_NOLOAD | RTLD_NODELETE)) {
+            !dlopen(info.dli_fname, RTLD_NOW | RTLD_LOCAL |
+                                   RTLD_NOLOAD | RTLD_NODELETE)) {
             LRLOG_WARN("[xemu] could not keep the core loaded\n");
         }
 #endif
@@ -1722,11 +1903,6 @@ RETRO_API bool retro_load_game(const struct retro_game_info *game)
     /* No GL renderer in the Android build: Vulkan, whatever is preferred */
     want_vulkan = true;
 #endif
-#ifdef __APPLE__
-    /* MoltenVK has no geometry shaders, which the Vulkan renderer needs: GL,
-     * whatever is preferred */
-    want_vulkan = false;
-#endif
     if (emu_started_once) {
         /* the machine was started on Vulkan (checked above) and stays on it,
          * whatever the option says now */
@@ -1740,7 +1916,9 @@ RETRO_API bool retro_load_game(const struct retro_game_info *game)
     hw_render.depth              = true;
     hw_render.stencil            = true;
     hw_render.bottom_left_origin = true;
-    hw_render.cache_context      = true;
+    /* GL needs context_destroy before a video reinit. Cocoa can replace its
+     * share group even when the cached-context path skips that callback. */
+    hw_render.cache_context      = want_vulkan;
 
     if (want_vulkan) {
         LRLOG_INFO("[xemu] Requesting Vulkan HW context\n");
@@ -1763,7 +1941,7 @@ RETRO_API bool retro_load_game(const struct retro_game_info *game)
         hw_render.depth              = true;
         hw_render.stencil            = true;
         hw_render.bottom_left_origin = true;
-        hw_render.cache_context      = true;
+        hw_render.cache_context      = !want_vulkan;
 
         if (want_vulkan) {
             hw_render.context_type = RETRO_HW_CONTEXT_OPENGL_CORE;
@@ -1792,8 +1970,24 @@ RETRO_API bool retro_load_game(const struct retro_game_info *game)
     use_vulkan = want_vulkan;
     if (use_vulkan) {
         LRLOG_INFO("[xemu] Using Vulkan HW rendering\n");
-        environ_cb(RETRO_ENVIRONMENT_SET_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE,
-                   (void *)&xemu_vk_negotiation);
+        /* Keep v1 device sharing on older frontends. Instance settings are
+         * available only after the frontend explicitly advertises v2. */
+        static struct retro_hw_render_context_negotiation_interface_vulkan selected;
+        selected = xemu_vk_negotiation;
+        struct retro_hw_render_context_negotiation_interface support = {
+            RETRO_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE_VULKAN, 0
+        };
+        if (!environ_cb(RETRO_ENVIRONMENT_GET_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE_SUPPORT,
+                        &support) || support.interface_version < 2) {
+            selected.interface_version = 1;
+            selected.create_instance = NULL;
+            LRLOG_WARN("[xemu] Vulkan negotiation v1: retaining driver instance defaults\n");
+        }
+        if (!environ_cb(RETRO_ENVIRONMENT_SET_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE,
+                        &selected)) {
+            LRLOG_ERROR("[xemu] Vulkan device sharing negotiation was rejected\n");
+            return false;
+        }
     } else {
         LRLOG_INFO("[xemu] Using OpenGL HW rendering\n");
         environ_cb(RETRO_ENVIRONMENT_SET_HW_SHARED_CONTEXT, NULL);
@@ -1810,6 +2004,7 @@ RETRO_API bool retro_load_game(const struct retro_game_info *game)
                        NULL, QEMU_THREAD_JOINABLE);
 
     game_loaded = true;
+    reset_run_tracking = true;
 
     LRLOG_INFO("[xemu] retro_load_game completed successfully\n");
     return true;
@@ -1854,9 +2049,20 @@ RETRO_API void retro_run(void)
     static int64_t st_sync_sum, st_sync_max, st_video_sum, st_video_max;
     static int64_t st_audio_sum, st_audio_max;
     static int st_new_frames;
-    static uint64_t st_guest_frames;
+    static uint64_t st_guest_frames, st_scanout_flips;
     int64_t st_t;
     const int64_t st_start = g_get_monotonic_time();
+
+    if (reset_run_tracking) {
+        run_count = 0;
+        st_last_start = st_period_sum = st_period_max = 0;
+        st_sync_sum = st_sync_max = st_video_sum = st_video_max = 0;
+        st_audio_sum = st_audio_max = 0;
+        st_new_frames = 0;
+        st_guest_frames = 0;
+        st_scanout_flips = nv2a_libretro_scanout_flips();
+        reset_run_tracking = false;
+    }
 
     if (st_last_start) {
         const int64_t period = st_start - st_last_start;
@@ -1882,6 +2088,15 @@ RETRO_API void retro_run(void)
                    st_sync_max / 1000.0, st_video_sum / 300000.0,
                    st_video_max / 1000.0, st_audio_sum / 300000.0,
                    st_audio_max / 1000.0);
+        uint64_t scanout_flips = nv2a_libretro_scanout_flips();
+        double window_seconds = st_period_sum / 1000000.0;
+        if (window_seconds > 0) {
+            LRLOG_INFO("[xemu] FPS: guest flips %.2f; updated pictures %.2f; frontend %.2f; window %.3f s\n",
+                       (scanout_flips - st_scanout_flips) / window_seconds,
+                       (guest_frames - st_guest_frames) / window_seconds,
+                       300.0 / window_seconds, window_seconds);
+        }
+        st_scanout_flips = scanout_flips;
         st_guest_frames = guest_frames;
         st_new_frames = 0;
         st_period_sum = st_period_max = 0;
@@ -1995,7 +2210,8 @@ RETRO_API void retro_run(void)
             /* The frame rendered now, on the device shared with the
              * frontend, and handed over in this run: the renderer draws the
              * display, copies it into the image of the frontend's current
-             * sync index and waits for the GPU (pgraph/vk/display.c) */
+             * sync index. A dedicated renderer queue signals a semaphore
+             * for the frontend's GPU wait (pgraph/vk/display.c). */
             static uint64_t last_count;
             static unsigned last_w = 640, last_h = 480;
             const int index =
@@ -2003,10 +2219,16 @@ RETRO_API void retro_run(void)
             VkImage image;
             VkImageView view;
             VkFormat format;
+            VkSemaphore ready;
             int frame_w, frame_h;
             uint64_t count = last_count;
 
             xemu_libretro_vk.frame_index = index;
+            if (!xemu_libretro_vk.queue_shared) {
+                /* A separate queue cannot rely on the frontend queue's
+                 * submission order to protect an image being reused. */
+                vulkan_if->wait_sync_index(vulkan_if->handle);
+            }
             if (!vk_renderer_parked) {
                 st_t = g_get_monotonic_time();
                 nv2a_get_framebuffer_surface();
@@ -2018,7 +2240,7 @@ RETRO_API void retro_run(void)
 
             if (!vk_renderer_parked &&
                 nv2a_vk_libretro_get_frame(index, &image, &view, &format,
-                                           &frame_w, &frame_h, &count) &&
+                                           &frame_w, &frame_h, &count, &ready) &&
                 count != last_count) {
                 last_count = count;
                 last_w = (unsigned)frame_w;
@@ -2036,8 +2258,9 @@ RETRO_API void retro_run(void)
                     .subresourceRange.levelCount = 1,
                     .subresourceRange.layerCount = 1,
                 };
-                vulkan_if->set_image(vulkan_if->handle, &retro_vk_image, 0,
-                                     NULL, VK_QUEUE_FAMILY_IGNORED);
+                vulkan_if->set_image(vulkan_if->handle, &retro_vk_image,
+                                     ready ? 1 : 0, ready ? &ready : NULL,
+                                     VK_QUEUE_FAMILY_IGNORED);
                 st_new_frames++;
                 st_t = g_get_monotonic_time();
                 video_cb(RETRO_HW_FRAME_BUFFER_VALID, last_w, last_h, 0);

@@ -101,6 +101,7 @@ typedef struct GenVshGlslOptions {
     bool vulkan;
     bool prefix_outputs;
     bool use_push_constants_for_uniform_attrs;
+    bool use_hw_w_depth;
     int ubo_binding;
 } GenVshGlslOptions;
 

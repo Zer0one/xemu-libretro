@@ -1,0 +1,64 @@
+{
+  "review_date": "2026-10-24",
+  "official_upstream": "25e1ee2fd59a451f2ab57e825b4f8a5414220c8b",
+  "ideal_math": {
+    "triangle_samples": 4000,
+    "scales": [
+      [
+        1,
+        1
+      ],
+      [
+        2,
+        2
+      ],
+      [
+        4,
+        4
+      ],
+      [
+        4,
+        2
+      ]
+    ],
+    "max_double_relative_error": 1.4130785430666037e-10,
+    "boundary": "Ideal positive-W right-triangle math only. No GPU, FP32, real derivatives, clipping, or depth-quantization qualification."
+  },
+  "historical_runtime": {
+    "w-depth-candidate": {
+      "core_sha256": "a1a8d89aec1ca7992d05180917bc08988e412ccfa532cefd5cd58ed0ae435877",
+      "renderer": "vulkan",
+      "completed": true,
+      "exit_code": 0,
+      "elapsed": 10.172,
+      "reaped": true,
+      "visual_result": "Did not remove the OutRun 2 horizon band; not an independent depth-accuracy qualification."
+    },
+    "z-varying-candidate": {
+      "core_sha256": "9f3b693914239b95c2cadd4bd69038e92aab158781beda019c25754ea8dc4a80",
+      "renderer": "vulkan",
+      "completed": true,
+      "exit_code": 0,
+      "elapsed": 10.227,
+      "reaped": true,
+      "visual_result": "Did not remove the OutRun 2 horizon band; not an independent depth-accuracy qualification."
+    }
+  },
+  "patch_provenance": {
+    "01": "Exact diff of preserved psh-before.c and psh-candidate.c.",
+    "02": "Exact preserved fragment delta; supporting vertex/header/cache-key edits reconstructed from preserved pre-experiment sources and recorded edit contract. Not a byte-exact full historical source archive."
+  },
+  "active_source_hashes": {
+    "hw/xbox/nv2a/pgraph/glsl/psh.c": "180bd6a13ac38e4e215292d17613830d881b72214a7ece72d1343388b6188481",
+    "hw/xbox/nv2a/pgraph/glsl/vsh.c": "dd89d6c1979df718288636b1cca9af064e8ca82bcedc828bdec62abf454f48a5",
+    "hw/xbox/nv2a/pgraph/glsl/vsh.h": "f4e2805c1ac01513daa4ca48d2b043972ac050a7900ec85f519055f5cd4be80e",
+    "hw/xbox/nv2a/pgraph/vk/shaders.c": "f073f1b8be60a76f1cadf8dea2fdabe06507457bd2869196c393673ebc25d5c4"
+  },
+  "installed_core_sha256": "991de76a815edceaabb695ca001507c4a1e8abd6056cb1c3227ead527abd697c",
+  "validation": "Sequential git apply --check and application succeeded only in temporary scratch copies; active renderer and installed core unchanged.",
+  "artifacts_sha256": {
+    "01-reciprocal-w-and-bias.patch": "539a83a39387012f63c60c5ced7a0f39b0f9aa8ac4eb6c868423ac217748da26",
+    "check-ideal-w-math.py": "1d970967a7dca35deca56887b122272092535ce54f0332055ed887d590c0ace5",
+    "02-unnormalized-z-after-01.patch": "b0296b4fc1f40e1a49b4b2be3df257f59db015423dac780ee20677758fd265db"
+  }
+}

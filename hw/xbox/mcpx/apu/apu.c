@@ -356,7 +356,11 @@ static void mcpx_apu_reset_hold(Object *obj, ResetType type)
     qemu_mutex_lock(&d->lock);
     mcpx_apu_wait_for_idle(d);
     mcpx_apu_reset_locked(d);
-    mcpx_apu_resume(d);
+    /* A snapshot load resets while stopped, then restores the DSPs. Keep
+     * the worker stopped until vm_state_change synchronizes their state. */
+    if (runstate_is_running()) {
+        mcpx_apu_resume(d);
+    }
     qemu_mutex_unlock(&d->lock);
     bql_lock();
 }

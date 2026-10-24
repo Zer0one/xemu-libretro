@@ -1342,6 +1342,11 @@ static void create_texture(PGRAPHState *pg, int texture_idx)
 
     float lod_bias = pgraph_convert_lod_bias_to_float(
         GET_MASK(filter, NV_PGRAPH_TEXFILTER0_MIPMAP_LOD_BIAS));
+    if (!r->supports_sampler_lod_bias) {
+        /* Portability devices may advertise a numeric limit but forbid
+         * sampler LOD bias through their feature bit. */
+        lod_bias = 0.0f;
+    }
     if (lod_bias > r->device_props.limits.maxSamplerLodBias) {
         lod_bias = r->device_props.limits.maxSamplerLodBias;
     } else if (lod_bias < -r->device_props.limits.maxSamplerLodBias) {

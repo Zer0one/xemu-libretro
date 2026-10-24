@@ -435,6 +435,14 @@ MString *pgraph_glsl_gen_vsh(const VshState *state, GenVshGlslOptions opts)
         );
     }
 
+    if (opts.use_hw_w_depth) {
+        /* Guest W depth is written by the fragment shader. Keep host Z
+         * inside the clip volume so it cannot perturb W interpolation.
+         * vtxPos and the other guest outputs above retain their values.
+         */
+        mstring_append(body, "  oPos.z = 0.5 * oPos.w;\n");
+    }
+
     if (opts.vulkan) {
         mstring_append(body,
                    "  gl_Position = oPos;\n"

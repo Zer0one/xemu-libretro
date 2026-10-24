@@ -4732,6 +4732,10 @@ foreach target : target_dirs
         libretro_link_args += ['-liphlpapi', '-static', '-static-libgcc', '-static-libstdc++']
         libretro_suffix = 'dll'
       elif host_os == 'darwin'
+        # Keep C++ RTTI/vtables and static dependencies private. RetroArch
+        # also links glslang; dyld can coalesce exported weak definitions
+        # across incompatible versions even with two-level namespaces.
+        libretro_link_args += ['-Wl,-exported_symbol,_retro_*']
         libretro_suffix = 'dylib'
       else
         # Only retro_* are the core's interface (ui/libretro.map); everything

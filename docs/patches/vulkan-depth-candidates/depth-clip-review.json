@@ -1,0 +1,207 @@
+{
+  "upstream_depth_equality_qualification": "fail",
+  "device": "Apple M4",
+  "cases": 512,
+  "d16_format": 124,
+  "d24_host_format": 130,
+  "host_depth_clamp": 1,
+  "validation_errors": 0,
+  "comparison_errors": 0,
+  "pre_post_discard_depth_differences": 0,
+  "nonfinite_raw": 0,
+  "w_depth_z_invariance": [
+    {
+      "ordinary": "s1x1-d16-w-b0-ordinary-mask0-cull0",
+      "changed_vertex_z": "s1x1-d16-w-b0-far-clip-mask0-cull0",
+      "metrics": {
+        "scaled_after_discard": {
+          "raw_depth_changed": 340,
+          "max_raw_difference": 8.41015625
+        },
+        "scaled_before_discard": {
+          "raw_depth_changed": 340,
+          "max_raw_difference": 8.41015625
+        },
+        "reference": {
+          "raw_depth_changed": 0,
+          "max_raw_difference": 0.0
+        }
+      }
+    },
+    {
+      "ordinary": "s1x1-d24-w-b0-ordinary-mask0-cull0",
+      "changed_vertex_z": "s1x1-d24-w-b0-far-clip-mask0-cull0",
+      "metrics": {
+        "scaled_after_discard": {
+          "raw_depth_changed": 341,
+          "max_raw_difference": 2150.5
+        },
+        "scaled_before_discard": {
+          "raw_depth_changed": 341,
+          "max_raw_difference": 2150.5
+        },
+        "reference": {
+          "raw_depth_changed": 0,
+          "max_raw_difference": 0.0
+        }
+      }
+    },
+    {
+      "ordinary": "s4x2-d16-w-b0-ordinary-mask0-cull0",
+      "changed_vertex_z": "s4x2-d16-w-b0-far-clip-mask0-cull0",
+      "metrics": {
+        "scaled_after_discard": {
+          "raw_depth_changed": 2662,
+          "max_raw_difference": 1.375
+        },
+        "scaled_before_discard": {
+          "raw_depth_changed": 2662,
+          "max_raw_difference": 1.375
+        },
+        "reference": {
+          "raw_depth_changed": 0,
+          "max_raw_difference": 0.0
+        }
+      }
+    },
+    {
+      "ordinary": "s4x2-d24-w-b0-ordinary-mask0-cull0",
+      "changed_vertex_z": "s4x2-d24-w-b0-far-clip-mask0-cull0",
+      "metrics": {
+        "scaled_after_discard": {
+          "raw_depth_changed": 2647,
+          "max_raw_difference": 353.0
+        },
+        "scaled_before_discard": {
+          "raw_depth_changed": 2647,
+          "max_raw_difference": 353.0
+        },
+        "reference": {
+          "raw_depth_changed": 0,
+          "max_raw_difference": 0.0
+        }
+      }
+    }
+  ],
+  "limits": [
+    "Reference equations execute in fragment stage, not the upstream GS pipeline or Xbox hardware.",
+    "Triangle cases only; no lines, converted quads, guest programs, sample shading, or real game scene.",
+    "Post-discard derivatives are undefined across nonuniform termination; observed equality on one driver is not a portability proof."
+  ],
+  "date": "2026-10-24",
+  "raw_evidence": "build/depth-validation/depth-clip-core-policy-final",
+  "driver": "/Users/andrea/Retro/Apps/RetroArch/Nightly/RetroArch (ARM).app/Contents/Frameworks/MoltenVK.framework/Versions/A/MoltenVK",
+  "driver_sha256": "6c511b765b68df9043b05fe6cdaacb78ce256115aab887a2b9d9c582143aa22b",
+  "source_manifest": {
+    "hw/xbox/nv2a/pgraph/glsl/psh.c": "180bd6a13ac38e4e215292d17613830d881b72214a7ece72d1343388b6188481",
+    "hw/xbox/nv2a/pgraph/glsl/geom.c": "9330262cea2efc702a36b1ec9dbe0cdd318430e7d62a62dc3b9565f4a75dcd54",
+    "docs/patches/vulkan-depth-candidates/01-reciprocal-w-and-bias.patch": "539a83a39387012f63c60c5ced7a0f39b0f9aa8ac4eb6c868423ac217748da26"
+  },
+  "test_sources_at_gpu_run": {
+    "analyze-depth.py": "7843ce0d5395509542c9cb1f52c6ee7f1438bd09841cd2625cc1a3b2acd8ad46",
+    "probe.cpp": "879ef9e58cce6735d13b8627bc55e044239732665393aaad4e53a3a706edeab9",
+    "run-macos.py": "de906cad51d1bad999d6faf58fa1ddc9a79319c59c4e5a7f9127e92cc38fbc63",
+    "prepare-depth.py": "25734dc42a1917ad509f4daf3af497de7713d5fe6b0b8fe0483653be237ac57b",
+    "README.md": "5c341ec2cd4d3a23475758b7543e6dcafa92cbc4e4a2a9f5f0ecae3b1b68575e",
+    "probe-common.h": "b8b057c529ec1ffd9949e648600ddd78bc90ca232884b0a6fdacf3df6ca14a06",
+    "depth.cpp": "28ae6318f8bbb6f6b36e3aacf66ccd427ca992ef0e50447af0abd584e7dbfec9",
+    "prepare.py": "52d07a62f33f0d49c8326c40e8d192e52e5ef3d9c83c713215351bdf81990031",
+    "analyze.py": "3a1696514892fa8a8adc8d8aac74fea744fdc140d0636175b38516c500d9ccba"
+  },
+  "analysis_script_sha256": "025e1ceb8fb1d0efbd134c1d44bfe7eeed322d09ffaf51f2d37b77635c76c1b2",
+  "arm_totals": {
+    "baseline": {
+      "covered_samples": 503568,
+      "coverage_differences": 7254,
+      "unequal_depth_samples": 426326,
+      "equal_passed": 76792,
+      "max_write_error": 0
+    },
+    "w_only": {
+      "covered_samples": 510248,
+      "coverage_differences": 574,
+      "unequal_depth_samples": 337322,
+      "equal_passed": 172476,
+      "max_write_error": 0
+    },
+    "scaled_after_discard": {
+      "covered_samples": 509922,
+      "coverage_differences": 0,
+      "unequal_depth_samples": 232900,
+      "equal_passed": 277022,
+      "max_write_error": 0
+    },
+    "scaled_before_discard": {
+      "covered_samples": 509922,
+      "coverage_differences": 0,
+      "unequal_depth_samples": 232900,
+      "equal_passed": 277022,
+      "max_write_error": 0
+    },
+    "reference": {
+      "covered_samples": 509922,
+      "coverage_differences": 0,
+      "unequal_depth_samples": 0,
+      "equal_passed": 509922,
+      "max_write_error": 0
+    }
+  },
+  "shape_totals": {
+    "all-negative-w": {
+      "reference_covered_samples": 0,
+      "candidate_unequal_samples": 0,
+      "max_candidate_w_d24_difference": 0,
+      "max_candidate_z_d24_difference": 0
+    },
+    "degenerate": {
+      "reference_covered_samples": 0,
+      "candidate_unequal_samples": 0,
+      "max_candidate_w_d24_difference": 0,
+      "max_candidate_z_d24_difference": 0
+    },
+    "far-clip": {
+      "reference_covered_samples": 57450,
+      "candidate_unequal_samples": 37566,
+      "max_candidate_w_d24_difference": 2997.0,
+      "max_candidate_z_d24_difference": 1629.0
+    },
+    "near-clip": {
+      "reference_covered_samples": 58680,
+      "candidate_unequal_samples": 15394,
+      "max_candidate_w_d24_difference": 6.0,
+      "max_candidate_z_d24_difference": 5.0
+    },
+    "negative-w": {
+      "reference_covered_samples": 121392,
+      "candidate_unequal_samples": 66646,
+      "max_candidate_w_d24_difference": 702.0,
+      "max_candidate_z_d24_difference": 182.0
+    },
+    "ordinary": {
+      "reference_covered_samples": 61104,
+      "candidate_unequal_samples": 13390,
+      "max_candidate_w_d24_difference": 6.0,
+      "max_candidate_z_d24_difference": 6.0
+    },
+    "side-clip": {
+      "reference_covered_samples": 150192,
+      "candidate_unequal_samples": 91796,
+      "max_candidate_w_d24_difference": 463.0,
+      "max_candidate_z_d24_difference": 61.0
+    },
+    "tiny-w": {
+      "reference_covered_samples": 61104,
+      "candidate_unequal_samples": 8108,
+      "max_candidate_w_d24_difference": 0.0,
+      "max_candidate_z_d24_difference": 6.0
+    }
+  },
+  "evidence_sha256": {
+    "gpu.json": "2f753151fa75fe388d20100e44034e3ddd0e6337bb116644f9157c214149ad3a",
+    "depth-analysis.json": "4d2908caf254fa35f53696a28e2f3dcdfedd863c56089042805768de483ebbf2",
+    "run.log": "737368f6ddec6b9c9ab809e04bd68d28df60b755ccbb9c8f8f0928fcb7f8c6ce",
+    "test-manifest.json": "35f697aca03f00681375d3b1351d11a4f12fec97c63086150d46a79adb6d7633",
+    "probe.vert": "8b8080c4e03db0767b143a084e3e49fb4bed2f6cee8c1edcecfbb5b158b5fb0e",
+    "probe.frag": "bf3e54e0e7e1db7166e6bcacea5dbf750b61147e06a4ad27a1992ed3e9b9ab5f"
+  }
+}
