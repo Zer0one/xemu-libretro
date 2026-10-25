@@ -2,17 +2,19 @@
 
 name: Crowdin Source Texts Upload
 
-# on change to the English texts
+# Disabled in this fork's GitHub Actions settings; do not re-enable or dispatch
+# without explicit approval. When enabled, upload English texts from main.
 on:
   workflow_dispatch:
   push:
     branches:
-      - libretro
+      - main
     paths:
       - 'ui/libretro_core_options.h'
 
 jobs:
   upload_source_file:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - name: Setup Java JDK

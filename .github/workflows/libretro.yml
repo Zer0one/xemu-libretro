@@ -3,6 +3,8 @@ name: Build libretro core
 # The core, built with -Dlibretro=true: xemu_libretro.dll for Windows,
 # cross-compiled in the MXE toolchain image upstream xemu uses for its Windows
 # releases, and xemu_libretro.so for Linux x86_64 and aarch64.
+# Disabled in this fork's GitHub Actions settings; explicit approval is needed
+# before re-enabling or dispatching it. Development builds target main.
 
 on:
   workflow_dispatch:
@@ -12,14 +14,14 @@ on:
         type: string
         default: all
   push:
-    branches: [libretro]
+    branches: [main]
 
 # Test builds can be limited to the platforms their testers use: the
 # platforms input (workflow_dispatch) lists them. Pushes and "all" build
 # everything.
 jobs:
   windows-x86_64:
-    if: github.event_name != 'workflow_dispatch' || inputs.platforms == 'all' || contains(inputs.platforms, 'windows')
+    if: github.ref == 'refs/heads/main' && (github.event_name != 'workflow_dispatch' || inputs.platforms == 'all' || contains(inputs.platforms, 'windows'))
     name: Windows x86_64
     runs-on: ubuntu-latest
     container:
@@ -128,7 +130,7 @@ jobs:
           path: dist/xemu_libretro.dll
 
   linux:
-    if: github.event_name != 'workflow_dispatch' || inputs.platforms == 'all' || contains(inputs.platforms, 'linux')
+    if: github.ref == 'refs/heads/main' && (github.event_name != 'workflow_dispatch' || inputs.platforms == 'all' || contains(inputs.platforms, 'linux'))
     name: Linux ${{ matrix.arch }}
     runs-on: ubuntu-24.04${{ matrix.arch == 'aarch64' && '-arm' || '' }}
     strategy:
@@ -206,7 +208,7 @@ jobs:
   # configure with what Android has no use for left out. The renderer is
   # Vulkan, through the frontend's context.
   android:
-    if: github.event_name != 'workflow_dispatch' || inputs.platforms == 'all' || contains(inputs.platforms, 'android')
+    if: github.ref == 'refs/heads/main' && (github.event_name != 'workflow_dispatch' || inputs.platforms == 'all' || contains(inputs.platforms, 'android'))
     name: Android ${{ matrix.abi }}
     runs-on: ubuntu-24.04
     strategy:
@@ -294,7 +296,7 @@ jobs:
   # scripts/download-macos-libs.py, Apple clang with the SDK and the minimum
   # versions upstream targets
   macos:
-    if: github.event_name != 'workflow_dispatch' || inputs.platforms == 'all' || contains(inputs.platforms, 'macos')
+    if: github.ref == 'refs/heads/main' && (github.event_name != 'workflow_dispatch' || inputs.platforms == 'all' || contains(inputs.platforms, 'macos'))
     name: macOS ${{ matrix.arch }}
     runs-on: macos-15
     strategy:

@@ -19,6 +19,7 @@
 #include "migration/snapshot.h"
 #include "ui/console.h"
 #include "hw/xbox/nv2a/nv2a.h"
+#include "hw/xbox/nv2a/debug.h"
 #include "ui/xemu-widescreen.h"
 
 #include <epoxy/gl.h>
@@ -188,6 +189,8 @@ static bool opt_use_dsp = false;
 static int  opt_surface_scale = 1;
 static int  opt_avpack = CONFIG_SYS_AVPACK_HDTV;
 static bool opt_cache_shaders = true;
+static bool opt_video_debug;
+static bool reset_video_debug = true;
 static int  opt_filtering = CONFIG_DISPLAY_FILTERING_LINEAR;
 static int  opt_audio_volume = 100;
 static int  opt_network_backend = 0; /* 0=disabled, 1=nat */
@@ -704,12 +707,15 @@ static VkInstance xemu_vk_create_instance(
             g_free(extensions);
         }
         if (layer_settings) {
-            // Keep MoltenVK's synchronous default with the installed drawable
-            // ownership patch. Its marker alone does not identify the separate
-            // acquisition-fence experiment in docs/libretro-vulkan-acquire-fence.md.
-            // A dedicated renderer queue keeps frontend drawable acquisition
-            // from blocking the renderer's submissions.
+            // Read at instance creation: changing the option cannot reconfigure
+            // an existing instance. Sync remains the default; the patch marker
+            // alone does not establish Async compatibility for this provider.
+            struct retro_variable var = {"xemu_moltenvk_queue_submission", NULL};
             VkBool32 synchronous = VK_TRUE;
+            if (environ_cb && environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) &&
+                var.value && !strcmp(var.value, "async")) {
+                synchronous = VK_FALSE;
+            }
             VkLayerSettingEXT setting = {
                 "MoltenVK", "MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS",
                 VK_LAYER_SETTING_TYPE_BOOL32_EXT, 1, &synchronous};
@@ -720,12 +726,14 @@ static VkInstance xemu_vk_create_instance(
             info.pNext = &settings;
             info.enabledExtensionCount = 1;
             info.ppEnabledExtensionNames = &extension;
-            LRLOG_INFO("[xemu] MoltenVK: drawable ownership patch %u, synchronous host submission; provider %s\n",
+            LRLOG_INFO("[xemu] MoltenVK: drawable ownership patch %u, %s host submission requested per instance; provider %s\n",
                        patch_version,
+                       synchronous ? "synchronous" : "asynchronous",
                        provider.dli_fname ? provider.dli_fname : "unknown");
             return create_instance_wrapper(opaque, &info);
         }
-        LRLOG_WARN("[xemu] MoltenVK: VK_EXT_layer_settings unavailable; retaining driver defaults\n");
+        LRLOG_WARN("[xemu] MoltenVK: Queue Submission option cannot be applied without VK_EXT_layer_settings; retaining driver defaults; provider %s\n",
+                   provider.dli_fname ? provider.dli_fname : "unknown");
     }
 #endif
     return create_instance_wrapper(opaque, &info);
@@ -1233,6 +1241,18 @@ static void update_variables(void)
     var.value = NULL;
     if (environ_cb && environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
         opt_aspect = !strcmp(var.value, "4:3") ? 1 : !strcmp(var.value, "16:9") ? 2 : 0;
+    }
+
+    var.key = "xemu_video_debug";
+    var.value = NULL;
+    bool video_debug = environ_cb &&
+        environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value &&
+        !strcmp(var.value, "enabled");
+    if (video_debug != opt_video_debug) {
+        opt_video_debug = video_debug;
+        reset_video_debug = true;
+        LRLOG_INFO("[xemu] Video Debug Logging %s\n",
+                   video_debug ? "enabled" : "disabled");
     }
 
     var.key = "xemu_memory";
@@ -2038,6 +2058,97 @@ RETRO_API void retro_unload_game(void)
     emu_initialized = false;
 }
 
+static int video_debug_compare_interval(const void *a, const void *b)
+{
+    int64_t x = *(const int64_t *)a, y = *(const int64_t *)b;
+    return (x > y) - (x < y);
+}
+
+static void video_debug_log(int64_t now)
+{
+    static int64_t last_log, last_sample;
+    static uint64_t first_increment, last_increment;
+    static unsigned int last_frame;
+    static unsigned int runs;
+    NV2AVideoDebug s;
+
+    if (!opt_video_debug || !emu_initialized || !context_ready) {
+        return;
+    }
+    if (reset_video_debug) {
+        last_log = 0;
+        runs = 0;
+        reset_video_debug = false;
+    }
+    runs++;
+    if ((last_log && now - last_log < 1000000) ||
+        !nv2a_profile_video_debug_snapshot(&s)) {
+        return;
+    }
+    if (last_log && s.sample_time_us > last_sample) {
+        double seconds = (s.sample_time_us - last_sample) / 1000000.0;
+        LRLOG_INFO("[xemu] Video Debug: mjr_fps=%u mjr_mspf=%d "
+                   "increment_hz=%.3f flip_stall_hz=%.3f frontend_hz=%.3f "
+                   "declared_hz=59.940 window_s=%.6f last_increment_age_ms=%.3f\n",
+                   s.fps, s.mspf,
+                   (s.increment_count - last_increment) / seconds,
+                   (unsigned int)(s.frame_count - last_frame) / seconds,
+                   runs / ((now - last_log) / 1000000.0), seconds,
+                   s.last_increment_us ?
+                       (s.sample_time_us - s.last_increment_us) / 1000.0 : -1.0);
+
+        /* The same completed frame that MJR's Advanced plot labels.
+         * These are per-frame counts, not rates or GPU execution times. */
+        GString *line = g_string_new("[xemu] Video Debug Counters:");
+        for (unsigned int i = 0; i < NV2A_PROF__COUNT; i++) {
+            g_string_append_printf(line, " %s=%d",
+                                   nv2a_profile_get_counter_name(i),
+                                   s.counters[i]);
+        }
+        LRLOG_INFO("%s\n", line->str);
+        g_string_free(line, true);
+
+        /* Exclude the interval crossing the baseline. Keep at most the
+         * latest 300 guest increment intervals, including long stalls. */
+        uint64_t produced = s.increment_count - first_increment;
+        unsigned int count = MIN(produced ? produced - 1 : 0,
+                                 NV2A_PROF_NUM_FRAMES);
+        int64_t intervals[NV2A_PROF_NUM_FRAMES], sum = 0;
+        unsigned int valid = 0, over25 = 0;
+        for (unsigned int i = 0; i < count; i++) {
+            unsigned int idx = (s.interval_ptr + NV2A_PROF_NUM_FRAMES -
+                                count + i) % NV2A_PROF_NUM_FRAMES;
+            int64_t us = s.intervals_us[idx];
+            if (us > 0) {
+                intervals[valid++] = us;
+                sum += us;
+                over25 += us > 25000;
+            }
+        }
+        if (valid) {
+            qsort(intervals, valid, sizeof(intervals[0]),
+                  video_debug_compare_interval);
+            LRLOG_INFO("[xemu] Video Debug Intervals: samples=%u "
+                       "mean_ms=%.3f p50_ms=%.3f p99_ms=%.3f max_ms=%.3f "
+                       "over25ms=%u (rolling guest increments, not scanout)\n",
+                       valid, sum / (1000.0 * valid),
+                       intervals[(valid - 1) / 2] / 1000.0,
+                       intervals[(99 * valid + 99) / 100 - 1] / 1000.0,
+                       intervals[valid - 1] / 1000.0, over25);
+        }
+    } else {
+        first_increment = s.increment_count;
+        LRLOG_INFO("[xemu] Video Debug: MJR-compatible NV2A counters; "
+                   "integer FPS/250ms and integer MSPF; additional rates "
+                   "and intervals do not measure physical presentation\n");
+    }
+    last_log = now;
+    last_sample = s.sample_time_us;
+    last_increment = s.increment_count;
+    last_frame = s.frame_count;
+    runs = 0;
+}
+
 RETRO_API void retro_run(void)
 {
     static int run_count = 0;
@@ -2054,6 +2165,7 @@ RETRO_API void retro_run(void)
     const int64_t st_start = g_get_monotonic_time();
 
     if (reset_run_tracking) {
+        reset_video_debug = true;
         run_count = 0;
         st_last_start = st_period_sum = st_period_max = 0;
         st_sync_sum = st_sync_max = st_video_sum = st_video_max = 0;
@@ -2072,6 +2184,7 @@ RETRO_API void retro_run(void)
     st_last_start = st_start;
 
     run_count++;
+    video_debug_log(st_start);
     if (run_count <= 5 || (run_count % 300) == 0) {
         LRLOG_INFO("[xemu] retro_run #%d (emu_init=%d ctx_ready=%d game=%d)\n",
                    run_count, emu_initialized, context_ready, game_loaded);
@@ -2368,6 +2481,7 @@ vk_audio:
 
 RETRO_API void retro_reset(void)
 {
+    reset_video_debug = true;
     LRLOG_INFO("[xemu] retro_reset\n");
     if (emu_initialized) {
         qemu_system_reset_request(SHUTDOWN_CAUSE_GUEST_RESET);
@@ -2464,6 +2578,7 @@ RETRO_API bool retro_unserialize(const void *data, size_t size)
     }
 
     LRLOG_INFO("[xemu] retro_unserialize: snapshot loaded from HDD image\n");
+    reset_video_debug = true;
     return true;
 }
 

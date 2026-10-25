@@ -4,6 +4,14 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+## Test build 4 - 2026-10-25
+
+- Add macOS **MoltenVK Queue Submission (Restart)** with Sync (default) and Async choices. Apply the selection to the frontend's Vulkan instance and log its provider; Async requires a compatible patched MoltenVK driver. Restart RetroArch to apply changes.
+
+- Add optional Video Debug Logging with the standalone's integer FPS, MSPF and completed-frame NV2A counters, plus decimal event rates and rolling frame intervals. Keep guest measurements distinct from frontend calls and physical display presentation.
+
+- Align development and build recipes with `main`, preserving separate official upstream and original Libretro port reference branches. Keep all of this fork's GitHub Actions workflows disabled until explicitly re-enabled; builds and translation updates are not published automatically.
+
 - Reconstruct guest W depth on Vulkan devices without geometry shaders, using neutral host Z to prevent guest Z from perturbing W interpolation. Preserve guest depth clipping and bias; Z-buffer and native geometry-shader paths retain their existing behavior.
 
 - Correct the grey horizon/building overlay in OutRun 2 on Vulkan devices without custom border colors: packed depth-texture lookups now use the guest's border color outside the selected border axes. Preserve native sampling when the extension is enabled.

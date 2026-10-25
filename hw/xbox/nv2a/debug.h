@@ -133,13 +133,36 @@ typedef struct NV2AStats {
         int counters[NV2A_PROF__COUNT];
     } frame_working, frame_history[NV2A_PROF_NUM_FRAMES];
     unsigned int frame_ptr;
+#ifdef LIBRETRO
+    /* Producer timestamps, distinct from MJR's integer MSPF measurement. */
+    uint64_t increment_count;
+    int64_t increment_intervals_us[NV2A_PROF_NUM_FRAMES];
+    unsigned int increment_ptr;
+#endif
 } NV2AStats;
+
+#ifdef LIBRETRO
+typedef struct NV2AVideoDebug {
+    unsigned int fps, frame_count;
+    int mspf, counters[NV2A_PROF__COUNT];
+    int64_t sample_time_us, last_increment_us;
+    uint64_t increment_count;
+    int64_t intervals_us[NV2A_PROF_NUM_FRAMES];
+    unsigned int interval_ptr;
+} NV2AVideoDebug;
+
+#endif
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 extern NV2AStats g_nv2a_stats;
+
+#ifdef LIBRETRO
+/* Try once; never wait for the GPU worker just to collect diagnostics. */
+bool nv2a_profile_video_debug_snapshot(NV2AVideoDebug *out);
+#endif
 
 const char *nv2a_profile_get_counter_name(unsigned int cnt);
 int nv2a_profile_get_counter_value(unsigned int cnt);

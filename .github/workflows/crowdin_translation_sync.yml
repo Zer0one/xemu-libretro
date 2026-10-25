@@ -2,6 +2,8 @@
 
 name: Crowdin Translation Sync
 
+# Disabled in this fork's GitHub Actions settings; do not re-enable or dispatch
+# without explicit approval. Translation updates belong to main.
 on:
   workflow_dispatch:
   schedule:
@@ -10,6 +12,7 @@ on:
 
 jobs:
   create_intl_file:
+    if: github.ref == 'refs/heads/main'
     permissions:
       contents: write           # 'write' access to repository contents
       pull-requests: write      # 'write' access to pull requests

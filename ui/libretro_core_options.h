@@ -159,6 +159,23 @@ struct retro_core_option_v2_definition option_defs_us[] = {
         },
         "vulkan"
     },
+#ifdef __APPLE__
+    {
+        "xemu_moltenvk_queue_submission",
+        "MoltenVK Queue Submission (Restart)",
+        NULL,
+        "Choose Sync or Async submission for macOS Vulkan. Sync is the default. Async requires a compatible MoltenVK driver with the acquisition and presentation fixes. Restart RetroArch after changing this option. Does not change VSync or shader compilation.",
+        NULL,
+        "video",
+        {
+            { "sync", "Sync" },
+            { "async", "Async" },
+            { NULL, NULL },
+        },
+        // Preserve the validated synchronous baseline; Async is opt-in.
+        "sync"
+    },
+#endif
     {
         "xemu_aspect_ratio",
         "Aspect Ratio",
@@ -195,6 +212,21 @@ struct retro_core_option_v2_definition option_defs_us[] = {
             { NULL, NULL },
         },
         "1"
+    },
+    {
+        "xemu_video_debug",
+        "Video Debug Logging",
+        NULL,
+        "Log the standalone Video Debug FPS, MSPF and completed-frame GPU counters once per second, with decimal guest event rates and frame interval statistics. Diagnostic only; does not measure physical display presentation.",
+        NULL,
+        "video",
+        {
+            { "disabled", "Disabled" },
+            { "enabled",  "Enabled" },
+            { NULL, NULL },
+        },
+        /* Standalone's Video Debug window is closed by default. */
+        "disabled"
     },
     {
         "xemu_avpack",

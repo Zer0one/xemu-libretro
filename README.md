@@ -21,6 +21,10 @@ This fork is developed on `main`. Its Git references have separate roles:
 | `michaeljsr` | [MichaelJSr/xemu-macos](https://github.com/MichaelJSr/xemu-macos) | Additional standalone macOS reference, branch `master`. |
 | `cosmicsnow` | [CosmicSnow/xemu-for-macos](https://github.com/CosmicSnow/xemu-for-macos) | Additional standalone macOS reference, branch `master`. |
 
+The `libretro` branch preserves the original port reference; development is not
+merged into it. The separate `upstream` branch stays free of Libretro changes,
+and full official upstream merges are integrated into `main`.
+
 The two additional remotes provide references for separately reviewed
 adaptations. The official upstream remains the emulator base. Their fetch
 configuration tracks only `master`; selected Vulkan adaptations and the exact
@@ -31,7 +35,22 @@ at `/Users/andrea/dev/xemu`. This repository remains dedicated to the Libretro c
 
 ## Downloads
 
-The core is built by libretro's buildbot for Windows and Linux (x86_64, aarch64), and is installed from RetroArch: Online Updater > Core Downloader. Every push to the `libretro` branch is also built in [Actions](https://github.com/WizzardSK/xemu-libretro/actions/workflows/libretro.yml), macOS (Apple Silicon, Intel) and Android (arm64-v8a, x86_64) included; the builds are the artifacts of a run, and downloading them needs a GitHub login.
+This fork's [GitHub Actions workflows](https://github.com/Zer0one/xemu-libretro/actions)
+are currently disabled, including build, buildbot preflight and translation
+workflows. Their recipes target `main` when explicitly re-enabled; no automatic
+builds or releases are published automatically by this fork.
+
+Manual builds are available from [Releases](https://github.com/Zer0one/xemu-libretro/releases).
+**Test build 4** provides a macOS ARM64 package for Apple Silicon, requiring
+macOS 14 or later because of its bundled libraries. It includes the core,
+matching `.info` and `xemu_libretro_libs`; install the `.info` into RetroArch's
+configured core-info directory. MoltenVK, console firmware and games are not
+included. Sync is the default; Async requires a compatible patched frontend
+MoltenVK driver.
+
+RetroArch's Online Updater distributes the original Libretro port through its
+buildbot. Those downloads are independent of this fork's changes. Use this
+fork's release package or build from `main` to use its adaptations.
 
 - **Linux:** `xemu_libretro.so` and `libslirp.so.0`; put both into RetroArch's `cores` folder. glibc builds, they do not load into a musl frontend.
 - **macOS:** `xemu_libretro.dylib` and the folder `xemu_libretro_libs`; put both into RetroArch's `cores` folder.
@@ -61,7 +80,9 @@ Xbox games as `.iso` or `.xiso` (xemu's XISO format, as made by extract-xiso).
 
 ## Video
 
-Select **Graphics API (Restart)** in Core Options and use RetroArch's matching `glcore` or `vulkan` video driver. Vulkan is the default; Android uses Vulkan only. macOS supports Vulkan through MoltenVK as well as OpenGL. The Metal path converts unsupported primitives on the CPU and uses hardware depth interpolation, which approximates NV2A depth behavior. Vulkan uses a dedicated renderer queue when available and hands frames to the frontend through GPU semaphores; MoltenVK keeps synchronous host submission and frontend VSync. See [Vulkan Integration And Validation](docs/libretro-vulkan.md) for driver selection, sources, evidence and remaining limits.
+Select **Graphics API (Restart)** in Core Options and use RetroArch's matching `glcore` or `vulkan` video driver. Vulkan is the default; Android uses Vulkan only. macOS supports Vulkan through MoltenVK as well as OpenGL. The Metal path converts unsupported primitives on the CPU and uses hardware depth interpolation, which approximates NV2A depth behavior. Vulkan uses a dedicated renderer queue when available and hands frames to the frontend through GPU semaphores. See [Vulkan Integration And Validation](docs/libretro-vulkan.md) for driver selection, sources, evidence and remaining limits.
+
+On macOS, **MoltenVK Queue Submission (Restart)** under Core Options → Video selects **Sync** (default) or **Async** host submission. Async requires a compatible MoltenVK driver with the acquisition and presentation fixes. Restart RetroArch after changing it; closing and reopening content may retain the existing Vulkan instance. The option applies only to the frontend-selected MoltenVK instance, whose provider path and requested mode are logged. If `VK_EXT_layer_settings` is unavailable, the core logs a warning and retains the driver's default. This option does not change VSync, audio synchronization or shader compilation, and has no effect on OpenGL.
 
 On Vulkan devices without geometry shaders, W-buffer draws reconstruct guest W
 from reciprocal W and use neutral host Z, while retaining guest depth clipping
@@ -73,6 +94,16 @@ are reproduced in the shader. This removes the grey horizon/building overlay
 observed in OutRun 2. Unsupported sampler LOD bias is kept at zero; devices
 that support it retain the guest's bias within the device limit.
 
+## Video Debug Logging
+
+**Video Debug Logging** under Core Options → Video writes the standalone's
+Video Debug measurements to the frontend log once per second. It is disabled
+by default. The log includes integer FPS/MSPF, named completed-frame GPU
+counters, decimal guest event rates and rolling frame intervals. These are
+guest measurements; they do not measure physical display presentation. See
+[Video Debug Measurements](docs/libretro-video-debug.md) for the MJR mapping
+and interpretation of 59.94 versus 60 FPS.
+
 ## Building
 
 The macOS OpenGL context-reset investigation, standalone comparison, and isolated RetroArch boot procedure are documented in [macOS OpenGL Validation](docs/libretro-macos-opengl.md).
@@ -82,14 +113,15 @@ Vulkan reset, content close/reload in the same process, and normal frontend exit
 Linux, with upstream's build dependencies installed:
 
 ```
-git clone https://github.com/WizzardSK/xemu-libretro.git
+git clone --branch main https://github.com/Zer0one/xemu-libretro.git
 cd xemu-libretro
 ./configure --extra-cflags="-DXBOX=1 -Wno-error" --target-list=i386-softmmu \
     -Dlibretro=true -Dpipewire=disabled -Db_staticpic=true
 ninja -C build xemu_libretro.so
 ```
 
-The CI workflow `.github/workflows/libretro.yml` builds every platform, and shows each one's dependencies.
+The disabled CI workflow `.github/workflows/libretro.yml` contains the build
+recipes and dependencies for Windows, Linux, Android and macOS.
 
 ## License
 

@@ -17,11 +17,12 @@ recipe, environment, logs, traces and binary hashes live under ignored
 
 ## Project Decision
 
-The user selected synchronous MoltenVK host submission for this core. Keep
-that production policy; the existing asynchronous GPU semaphore handoff is
-independent and remains in place. The driver experiment is retained as evidence
-for a correctness review in the separate Xenia MoltenVK chat, not adopted here
-as a dependency or classified as a confirmed MoltenVK bug.
+Sync remains the default. The core now exposes **MoltenVK Queue Submission
+(Restart)** with an explicit Async choice for compatible patched drivers.
+Restart RetroArch to recreate the Vulkan instance. The existing asynchronous
+GPU semaphore handoff is independent and remains in place. This document
+preserves the original driver experiment and its original binaries/results;
+it does not qualify every later driver build or introduce a driver dependency.
 
 ## Dependency And Lifetime Change
 

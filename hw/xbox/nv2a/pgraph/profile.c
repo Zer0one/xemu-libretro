@@ -25,6 +25,14 @@ void nv2a_profile_increment(void)
 {
     int64_t now = qemu_clock_get_us(QEMU_CLOCK_REALTIME);
     const int64_t fps_update_interval = 250000;
+#ifdef LIBRETRO
+    int64_t previous = g_nv2a_stats.last_flip_time;
+    g_nv2a_stats.increment_intervals_us[g_nv2a_stats.increment_ptr] =
+        previous ? now - previous : 0;
+    g_nv2a_stats.increment_ptr =
+        (g_nv2a_stats.increment_ptr + 1) % NV2A_PROF_NUM_FRAMES;
+    g_nv2a_stats.increment_count++;
+#endif
     g_nv2a_stats.last_flip_time = now;
 
     static int64_t frame_count = 0;
@@ -72,3 +80,31 @@ int nv2a_profile_get_counter_value(unsigned int cnt)
                        NV2A_PROF_NUM_FRAMES;
     return g_nv2a_stats.frame_history[idx].counters[cnt];
 }
+
+#ifdef LIBRETRO
+bool nv2a_profile_video_debug_snapshot(NV2AVideoDebug *out)
+{
+    NV2AState *d = g_nv2a;
+    if (!d || qemu_mutex_trylock(&d->pgraph.lock)) {
+        return false;
+    }
+
+    /* Both profiling events are serialized by PGRAPH's existing lock.
+     * Copy only completed work; format/log after releasing the lock. */
+    out->fps = g_nv2a_stats.increment_fps;
+    out->sample_time_us = qemu_clock_get_us(QEMU_CLOCK_REALTIME);
+    out->last_increment_us = g_nv2a_stats.last_flip_time;
+    out->frame_count = g_nv2a_stats.frame_count;
+    unsigned int idx = (g_nv2a_stats.frame_ptr + NV2A_PROF_NUM_FRAMES - 1) %
+                       NV2A_PROF_NUM_FRAMES;
+    out->mspf = g_nv2a_stats.frame_history[idx].mspf;
+    memcpy(out->counters, g_nv2a_stats.frame_history[idx].counters,
+           sizeof(out->counters));
+    out->increment_count = g_nv2a_stats.increment_count;
+    out->interval_ptr = g_nv2a_stats.increment_ptr;
+    memcpy(out->intervals_us, g_nv2a_stats.increment_intervals_us,
+           sizeof(out->intervals_us));
+    qemu_mutex_unlock(&d->pgraph.lock);
+    return true;
+}
+#endif

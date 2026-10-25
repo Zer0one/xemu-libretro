@@ -4,14 +4,17 @@ name: GitLab CI preflight
 # since the buildbot's pipelines cannot be started from here. The jobs and
 # this workflow run the same scripts (.ci/libretro-*.sh); only the job count
 # differs, as a GitHub runner has four cores.
+# Disabled in this fork's GitHub Actions settings; explicit approval is needed
+# before re-enabling or dispatching it. Preflight builds target main.
 
 on:
   workflow_dispatch:
   push:
-    branches: [gitlab-ci]
+    branches: [main]
 
 jobs:
   linux:
+    if: github.ref == 'refs/heads/main'
     name: libretro-build-linux-${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -42,6 +45,7 @@ jobs:
           path: xemu_libretro.so
 
   windows:
+    if: github.ref == 'refs/heads/main'
     name: libretro-build-windows-x64
     runs-on: ubuntu-24.04
     steps:

@@ -58,10 +58,13 @@ instance. The core resolves the provider selected by RetroArch, checks the local
 `xeniaMoltenVKDrawableOwnershipPatchVersion` symbol in that exact loaded library
 and verifies that the symbol belongs to the same library address range:
 
-- Request synchronous host submission for MoltenVK, including patched drivers.
-  This matches its default and avoids the measured VSync throughput loss in
-  xemu's blocking submission path. The marker is logged for driver diagnostics;
-  it no longer selects asynchronous submission.
+- **MoltenVK Queue Submission (Restart)** selects Sync (default) or Async on
+  macOS. The core reads `xemu_moltenvk_queue_submission` when creating the
+  instance; only `async` requests asynchronous host submission. Restart
+  RetroArch to apply a change. Async requires a compatible driver with the
+  acquisition/presentation fixes; the marker alone does not establish that
+  compatibility. The provider path and requested mode are logged. VSync and
+  audio synchronization remain separate frontend settings.
 - Missing layer-settings extension, or negotiation v1: keep driver defaults and
   log the limitation.
 

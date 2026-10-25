@@ -4,9 +4,15 @@ These apply to any AI agent working in this repository (Claude Code reads them t
 
 ## Branches and history
 
-- The `libretro` branch is never deleted, and nothing that rewrites its history is run on it: no force-push, no rebase, no amending or squashing of commits that are already pushed. It is the fork's only long-lived branch.
-- New features and experimental changes go on their own branch, and testers test builds of that branch. When testing is done, the related commits are squashed and merged into `libretro`, so the main branch does not collect commits that were superseded midway.
-- A fix that users of the `libretro` builds need before the branch is merged is cherry-picked into `libretro`, in a way that does not break the later merge of the branch.
+- Development and integration take place on `main`, which tracks `origin/main` in `Zer0one/xemu-libretro`. Do not rewrite published history: no force-push, rebase, or amending or squashing commits that are already pushed.
+- The `libretro` branch is preserved as the reference for the original WizzardSK Libretro port, not as this fork's development or release branch. Never delete it or rewrite its history, and do not merge this fork's development changes into it.
+- The separate `upstream` branch tracks `upstream/master` from `xemu-project/xemu`. Keep it free of Libretro adaptations; integrate official upstream into `main` through full merges as described below.
+- Experimental work may use a dedicated branch for tester builds. Integrate completed work into `main`; never squash an official upstream merge.
+
+## CI
+
+- This fork's GitHub Actions workflows are currently disabled in the repository settings. Do not enable or dispatch them unless the developer explicitly requests it.
+- Workflow branch filters and jobs target `main`, not the `libretro` or `upstream` reference branches. Keep the recipes ready for a future explicit reactivation.
 
 ## Merging upstream xemu
 
@@ -20,7 +26,7 @@ This repository builds the libretro core and nothing else. The standalone's part
 - When upstream changes a build file around one of the removed parts, keep them removed and take the rest of the change.
 - When something new is deleted for the same reason, add its path to `.upstream-excluded` in the same commit.
 - This `AGENTS.md` replaces upstream xemu's own. When a merge conflicts on it, keep this one.
-- After a merge, `upstream.version` names the upstream version merged; the core reports that version, and a new release is built.
+- After a merge, `upstream.version` names the upstream version merged; the core reports that version. Publishing a release is a separate action requiring the developer's explicit request.
 - `CHANGELOG.md` is this fork's own. When a merge conflicts on it, keep this one.
 
 ## These files
@@ -30,7 +36,7 @@ This repository builds the libretro core and nothing else. The standalone's part
 ## Changelog and README
 
 - `CHANGELOG.md` is updated in the same commit as the change it describes: what changed for someone using the core, newest first. Not a copy of the commit message.
-- A change on a feature branch gets its entry on that branch, under "Unreleased"; it reaches `libretro` with the squash merge.
+- A change on a feature branch gets its entry on that branch, under "Unreleased"; it reaches `main` when the work is integrated.
 - `README.md` is kept true in the same way: when a change makes a sentence in it wrong (a limit lifted, an option added, a file moved), fix the sentence in that commit.
 
 ## Code
