@@ -208,12 +208,32 @@ QemuConsole *nv2a_get_vga_console(void)
     return NULL;
 }
 
+#ifdef LIBRETRO
+static uint64_t libretro_vblanks, libretro_vblank_pending;
+
+uint64_t nv2a_libretro_vblanks(void)
+{
+    return qatomic_read(&libretro_vblanks);
+}
+
+uint64_t nv2a_libretro_vblank_pending(void)
+{
+    return qatomic_read(&libretro_vblank_pending);
+}
+#endif
+
 static void nv2a_vga_gfx_update(void *opaque)
 {
     VGACommonState *vga = opaque;
     vga->hw_ops->gfx_update(vga);
 
     NV2AState *d = container_of(vga, NV2AState, vga);
+#ifdef LIBRETRO
+    qatomic_inc(&libretro_vblanks);
+    if (d->pcrtc.pending_interrupts & NV_PCRTC_INTR_0_VBLANK) {
+        qatomic_inc(&libretro_vblank_pending);
+    }
+#endif
     d->pcrtc.pending_interrupts |= NV_PCRTC_INTR_0_VBLANK;
     d->pcrtc.raster = 0;
 

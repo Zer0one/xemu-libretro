@@ -32,6 +32,7 @@ typedef struct {
     bool smooth_shading;
     bool first_vertex_is_provoking;
     bool z_perspective;
+    bool omit_nonpoint_point_size;
     short tri_rot0;
     short tri_rot1;
 } GeomState;

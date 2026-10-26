@@ -99,6 +99,7 @@ typedef struct BetaState {
 } BetaState;
 
 typedef struct GPUProperties {
+    bool omit_nonpoint_point_size;
     struct {
         short tri;
         short tri_strip0;

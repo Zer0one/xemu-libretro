@@ -134,7 +134,13 @@ static void voice_off(MCPXAPUState *d, uint16_t v)
 static void voice_lock(MCPXAPUState *d, uint16_t v, bool lock)
 {
     assert(v < MCPX_HW_MAX_VOICES);
+#ifdef LIBRETRO
+    qatomic_inc(&d->register_waiters);
+#endif
     qemu_mutex_lock(&d->lock);
+#ifdef LIBRETRO
+    qatomic_dec(&d->register_waiters);
+#endif
 
     uint64_t mask = 1LL << (v % 64);
     if (lock) {

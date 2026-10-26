@@ -41,12 +41,22 @@ workflows. Their recipes target `main` when explicitly re-enabled; no automatic
 builds or releases are published automatically by this fork.
 
 Manual builds are available from [Releases](https://github.com/Zer0one/xemu-libretro/releases).
-**Test build 4** provides a macOS ARM64 package for Apple Silicon, requiring
+**v0.8.138-3-libretro.1** preserves the Xbox-only core before further upstream and
+Chihiro integrations, with the Linux boot/lifetime and Raven OpenGL corrections.
+The macOS ARM64 package for Apple Silicon requires
 macOS 14 or later because of its bundled libraries. It includes the core,
 matching `.info` and `xemu_libretro_libs`; install the `.info` into RetroArch's
 configured core-info directory. MoltenVK, console firmware and games are not
 included. Sync is the default; Async requires a compatible patched frontend
 MoltenVK driver.
+
+The proposed separate Xbox and Chihiro cores are documented in the
+[integration assessment](docs/chihiro-integration-plan.md); they are not part
+of this release. The official xemu base remains `0.8.138-3` (`25e1ee2fd5`).
+
+Release tags use `v<upstream.version>-libretro.<revision>`. The upstream part
+identifies the integrated xemu version, including its commits-since-tag count;
+the Libretro revision increases for releases on that same base.
 
 RetroArch's Online Updater distributes the original Libretro port through its
 buildbot. Those downloads are independent of this fork's changes. Use this
@@ -70,9 +80,10 @@ Put these files into RetroArch's system directory, under `system/xemu/`:
 The boot ROM and the BIOS are Microsoft's and have to be dumped from your own console; see xemu's [required files](https://xemu.app/docs/required-files/). Other names and locations can be set in the core options. The EEPROM (`xbox_eeprom.bin`) is created in the same folder when it is missing.
 
 Resolve RetroArch's configured **System/BIOS** directory before copying these
-files; installing the core alone does not install its firmware or HDD. A debug
-BIOS such as the 4627 image used in local validation needs **System Memory (MB)**
-set to **128 MB**; the retail default remains 64 MB.
+files; installing the core alone does not install its firmware or HDD.
+**System Memory (MB)** defaults to the retail Xbox's **64 MB**. OutRun 2 and Halo
+booted at 64 MB with the 4627 BIOS used in Linux validation; that BIOS does not
+establish a requirement for 128 MB. Increasing memory is not a boot-failure fix.
 
 ## Content
 
@@ -83,6 +94,15 @@ Xbox games as `.iso` or `.xiso` (xemu's XISO format, as made by extract-xiso).
 Select **Graphics API (Restart)** in Core Options and use RetroArch's matching `glcore` or `vulkan` video driver. Vulkan is the default; Android uses Vulkan only. macOS supports Vulkan through MoltenVK as well as OpenGL. The Metal path converts unsupported primitives on the CPU and uses hardware depth interpolation, which approximates NV2A depth behavior. Vulkan uses a dedicated renderer queue when available and hands frames to the frontend through GPU semaphores. See [Vulkan Integration And Validation](docs/libretro-vulkan.md) for driver selection, sources, evidence and remaining limits.
 
 On macOS, **MoltenVK Queue Submission (Restart)** under Core Options → Video selects **Sync** (default) or **Async** host submission. Async requires a compatible MoltenVK driver with the acquisition and presentation fixes. Restart RetroArch after changing it; closing and reopening content may retain the existing Vulkan instance. The option applies only to the frontend-selected MoltenVK instance, whose provider path and requested mode are logged. If `VK_EXT_layer_settings` is unavailable, the core logs a warning and retains the driver's default. This option does not change VSync, audio synchronization or shader compilation, and has no effect on OpenGL.
+
+For Linux boot failures and the unpaced-frontend corrections, see
+[Linux Boot Validation](docs/libretro-linux-boot.md). The tested AMD/RadeonSI
+OpenGL fence failure also occurs in official standalone xemu at the same source
+revision. The core automatically detects Mesa/RadeonSI on Raven and omits unused
+geometry-shader point-size output for lines and triangles, preserving point
+output. This avoids the tested driver trigger without replacing Mesa; OutRun 2
+attract was verified on Vega 11 with system Mesa 25.3.6. A separate Mesa driver
+patch is also documented. See the validation document for evidence and limits.
 
 On Vulkan devices without geometry shaders, W-buffer draws reconstruct guest W
 from reciprocal W and use neutral host Z, while retaining guest depth clipping

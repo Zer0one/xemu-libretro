@@ -23,6 +23,12 @@
 
 #ifdef LIBRETRO
 static uint64_t libretro_scanout_flips;
+static uint64_t libretro_vblank_acks;
+
+uint64_t nv2a_libretro_vblank_acks(void)
+{
+    return qatomic_read(&libretro_vblank_acks);
+}
 
 uint64_t nv2a_libretro_scanout_flips(void)
 {
@@ -64,6 +70,11 @@ void pcrtc_write(void *opaque, hwaddr addr, uint64_t val, unsigned int size)
 
     switch (addr) {
     case NV_PCRTC_INTR_0:
+#ifdef LIBRETRO
+        if (val & d->pcrtc.pending_interrupts & NV_PCRTC_INTR_0_VBLANK) {
+            qatomic_inc(&libretro_vblank_acks);
+        }
+#endif
         d->pcrtc.pending_interrupts &= ~val;
         nv2a_update_irq(d);
         break;

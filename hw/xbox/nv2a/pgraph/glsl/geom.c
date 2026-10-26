@@ -25,6 +25,7 @@
 
 void pgraph_glsl_set_geom_state(PGRAPHState *pg, GeomState *state)
 {
+    state->omit_nonpoint_point_size = false;
     state->primitive_mode = (enum ShaderPrimitiveMode)pg->primitive_mode;
 
     state->polygon_front_mode = (enum ShaderPolygonMode)GET_MASK(
@@ -48,6 +49,7 @@ void pgraph_glsl_set_geom_state(PGRAPHState *pg, GeomState *state)
 
     if (pg->renderer->ops.get_gpu_properties) {
         GPUProperties *gpu_props = pg->renderer->ops.get_gpu_properties();
+        state->omit_nonpoint_point_size = gpu_props->omit_nonpoint_point_size;
 
         switch (state->primitive_mode) {
         case PRIM_TYPE_TRIANGLES:
@@ -118,6 +120,7 @@ MString *pgraph_glsl_gen_geom(const GeomState *state, GenGeomGlslOptions opts)
     bool need_triz = false;
     bool need_quadz = false;
     bool need_linez = false;
+    bool emits_points = false;
     const char *layout_in = NULL;
     const char *layout_out = NULL;
     const char *body = NULL;
@@ -168,6 +171,7 @@ MString *pgraph_glsl_gen_geom(const GeomState *state, GenGeomGlslOptions opts)
         } else {
             assert(polygon_mode == POLY_MODE_POINT);
             layout_out = "layout(points, max_vertices = 3) out;\n";
+            emits_points = true;
             body = "  mat4 pz = calc_triz(v[0], v[1], v[2]);\n"
                    "  emit_vertex(v[0], mat4(pz[0], pz[0], pz[0], pz[3]));\n"
                    "  EndPrimitive();\n"
@@ -205,6 +209,7 @@ MString *pgraph_glsl_gen_geom(const GeomState *state, GenGeomGlslOptions opts)
         } else {
             assert(polygon_mode == POLY_MODE_POINT);
             layout_out = "layout(points, max_vertices = 4) out;\n";
+            emits_points = true;
             body = "  mat4 pz, pz2;\n"
                    "  calc_quadz(0, 1, 2, 3, pz, pz2);\n"
                    "  emit_vertex(0, mat4(pz[0], pz[0], pz[0], pz[3]));\n"
@@ -247,6 +252,7 @@ MString *pgraph_glsl_gen_geom(const GeomState *state, GenGeomGlslOptions opts)
         } else {
             assert(polygon_mode == POLY_MODE_POINT);
             layout_out = "layout(points, max_vertices = 4) out;\n";
+            emits_points = true;
             body = "  if ((gl_PrimitiveIDIn & 1) != 0) { return; }\n"
                    "  mat4 pz, pz2;\n"
                    "  calc_quadz(2, 0, 1, 3, pz, pz2);\n"
@@ -342,7 +348,7 @@ MString *pgraph_glsl_gen_geom(const GeomState *state, GenGeomGlslOptions opts)
         output,
         "void emit_vertex(int index, mat4 pz) {\n"
         "  gl_Position = gl_in[index].gl_Position;\n"
-        "  gl_PointSize = gl_in[index].gl_PointSize;\n"
+        "%s"
         "  vtxD0 = v_vtxD0[%s];\n"
         "  vtxD1 = v_vtxD1[%s];\n"
         "  vtxB0 = v_vtxB0[%s];\n"
@@ -358,6 +364,8 @@ MString *pgraph_glsl_gen_geom(const GeomState *state, GenGeomGlslOptions opts)
         "  triMZ = (isnan(pz[3].x) || isinf(pz[3].x)) ? 0.0 : pz[3].x;\n"
         "  EmitVertex();\n"
         "}\n",
+        (!state->omit_nonpoint_point_size || emits_points) ?
+            "  gl_PointSize = gl_in[index].gl_PointSize;\n" : "",
         provoking_index,
         provoking_index,
         provoking_index,

@@ -88,6 +88,10 @@ typedef struct MCPXAPUState {
     QemuMutex lock;
     QemuCond cond;
     QemuCond idle_cond;
+#ifdef LIBRETRO
+    /* Host synchronization only; not part of the guest or snapshot state. */
+    unsigned int register_waiters;
+#endif
     bool pause_requested;
     bool is_idle;
 

@@ -316,6 +316,21 @@ static void *mcpx_apu_frame_thread(void *arg)
 
         throttle(d);
         se_frame(d);
+#ifdef LIBRETRO
+        /* An unpaced frontend can drain the ring before it reaches the
+         * throttle watermark. In that case throttle() never drops this
+         * mutex: guest voice-method writes wait for it while holding BQL,
+         * preventing the main loop from delivering VBlank. Allow register
+         * updates between complete APU frames even when no audio wait is
+         * needed. An unlock/relock alone lets an unfair host mutex starve
+         * the guest writer again; wait for an announced writer to finish.
+         * voice_lock signals cond after updating the registers. This waits
+         * for guest work, not for a presentation or audio pacing deadline. */
+        while (qatomic_read(&d->register_waiters) && !d->pause_requested &&
+               !qatomic_read(&d->exiting)) {
+            qemu_cond_wait(&d->cond, &d->lock);
+        }
+#endif
     }
     qemu_mutex_unlock(&d->lock);
     return NULL;

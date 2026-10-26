@@ -12,6 +12,7 @@
 #include "qemu/osdep.h"
 #include "qemu/main-loop.h"
 #include "qemu/thread.h"
+#include "qemu/timer.h"
 #include "system/system.h"
 #include "system/runstate.h"
 #include "qapi/error.h"
@@ -147,12 +148,39 @@ extern void glo_set_current(GloContext *context);
 /* Emulation state                                                           */
 /* ========================================================================= */
 
+#define XEMU_REFRESH_RATE 59.94
+
 static bool emu_initialized = false;
 /* QEMU was started in this process (retro_load_game), and with which
  * renderer: the machine stays built, and the next content runs on it */
 static bool emu_started_once = false;
 /* Frontend timing windows must not span different content sessions. */
 static bool reset_run_tracking;
+static uint64_t vblank_requests, vblank_callbacks;
+static int64_t vblank_virtual_ns;
+
+static void libretro_vblank_bh(void *opaque)
+{
+    static int64_t next_vblank_ns, previous_ns;
+    /* Match the declared 59.94 Hz using guest time. The frontend still
+     * requests every update, but repeated calls within the same emulated
+     * refresh interval must not flood the guest with VBlank interrupts.
+     * No host sleep or independent presentation timer is introduced. */
+    const int64_t interval_ns = (int64_t)(1000000000.0 / XEMU_REFRESH_RATE);
+    int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+    if (!next_vblank_ns || now < previous_ns || now >= next_vblank_ns) {
+        graphic_hw_update(opaque);
+        if (!next_vblank_ns || now < previous_ns ||
+            now - next_vblank_ns >= interval_ns) {
+            next_vblank_ns = now + interval_ns;
+        } else {
+            next_vblank_ns += interval_ns;
+        }
+    }
+    previous_ns = now;
+    qatomic_set(&vblank_virtual_ns, now);
+    qatomic_inc(&vblank_callbacks);
+}
 static bool emu_started_vulkan = false;
 static bool gl_renderer_parked = false;
 static QemuThread emu_thread;
@@ -1650,8 +1678,44 @@ RETRO_API unsigned retro_api_version(void)
     return RETRO_API_VERSION;
 }
 
+/* QEMU starts RCU in a library constructor. Metadata queries can precede
+ * retro_init and end with dlclose, so protect both API entry paths. Linux
+ * and Android additionally set ELF NODELETE before any constructor runs. */
+static void libretro_pin_core(void)
+{
+    static bool pinned;
+    if (pinned) {
+        return;
+    }
+#ifdef _WIN32
+    HMODULE self;
+    if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                            GET_MODULE_HANDLE_EX_FLAG_PIN,
+                            (LPCWSTR)(void *)libretro_pin_core, &self)) {
+        LRLOG_WARN("[xemu] could not keep the core loaded: error %lu\n",
+                   GetLastError());
+    } else {
+        pinned = true;
+    }
+#else
+    Dl_info info;
+    /* A reference that is never dropped; RTLD_NODELETE keeps the
+     * object even past it. Keep its symbols local: macOS defaults to
+     * GLOBAL, which makes RetroArch mistake a later reload for a
+     * statically linked core when it finds retro_init in RTLD_DEFAULT. */
+    if (!dladdr((void *)libretro_pin_core, &info) || !info.dli_fname ||
+        !dlopen(info.dli_fname, RTLD_NOW | RTLD_LOCAL |
+                               RTLD_NOLOAD | RTLD_NODELETE)) {
+        LRLOG_WARN("[xemu] could not keep the core loaded\n");
+    } else {
+        pinned = true;
+    }
+#endif
+}
+
 RETRO_API void retro_get_system_info(struct retro_system_info *info)
 {
+    libretro_pin_core();
     memset(info, 0, sizeof(*info));
     info->library_name     = "Microsoft - Xbox (OG)";
     info->library_version  = xemu_libretro_version;
@@ -1676,7 +1740,7 @@ RETRO_API void retro_get_system_av_info(struct retro_system_av_info *info)
     info->geometry.max_width    = declared_max_width;
     info->geometry.max_height   = declared_max_height;
     info->geometry.aspect_ratio = wants_widescreen() ? 16.0f / 9.0f : 4.0f / 3.0f;
-    info->timing.fps            = 59.94;
+    info->timing.fps            = XEMU_REFRESH_RATE;
     info->timing.sample_rate    = 48000.0;
 }
 
@@ -1689,35 +1753,9 @@ RETRO_API void retro_init(void)
     LRLOG_INFO("[xemu] xemu libretro core %s, built from commit %.9s\n",
                xemu_version, xemu_commit[0] ? xemu_commit : "unknown");
 
-    /* The core stays in memory once loaded. retro_unload_game joins only the
-     * emulation thread; QEMU's other threads (RCU, vCPU, nv2a) keep running
-     * - upstream never joins them either, its exit() ends them - and its
-     * atexit handlers stay registered, so when the frontend unloaded the
-     * core they ran on unmapped code and RetroArch crashed on close (and
-     * hung while the crash was dumped). Pinned, they end with the process,
-     * as in standalone. */
-    {
-#ifdef _WIN32
-        HMODULE self;
-        if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
-                                GET_MODULE_HANDLE_EX_FLAG_PIN,
-                                (LPCWSTR)(void *)retro_init, &self)) {
-            LRLOG_WARN("[xemu] could not keep the core loaded: error %lu\n",
-                       GetLastError());
-        }
-#else
-        Dl_info info;
-        /* A reference that is never dropped; RTLD_NODELETE keeps the
-         * object even past it. Keep its symbols local: macOS defaults to
-         * GLOBAL, which makes RetroArch mistake a later reload for a
-         * statically linked core when it finds retro_init in RTLD_DEFAULT. */
-        if (!dladdr((void *)retro_init, &info) || !info.dli_fname ||
-            !dlopen(info.dli_fname, RTLD_NOW | RTLD_LOCAL |
-                                   RTLD_NOLOAD | RTLD_NODELETE)) {
-            LRLOG_WARN("[xemu] could not keep the core loaded\n");
-        }
-#endif
-    }
+    /* RCU, vCPU and nv2a threads outlive content. Keep their code and
+     * registered exit handlers mapped for the process lifetime. */
+    libretro_pin_core();
 
     /* Initialize Windows TLS keys for __thread replacements */
 #if defined(LIBRETRO) && defined(_WIN32)
@@ -2070,6 +2108,9 @@ static void video_debug_log(int64_t now)
     static uint64_t first_increment, last_increment;
     static unsigned int last_frame;
     static unsigned int runs;
+    static uint64_t prev_requested, prev_callbacks, prev_delivered;
+    static uint64_t prev_pending, prev_acks;
+    static int64_t prev_virtual;
     NV2AVideoDebug s;
 
     if (!opt_video_debug || !emu_initialized || !context_ready) {
@@ -2087,13 +2128,32 @@ static void video_debug_log(int64_t now)
     }
     if (last_log && s.sample_time_us > last_sample) {
         double seconds = (s.sample_time_us - last_sample) / 1000000.0;
+        uint64_t callbacks = qatomic_read(&vblank_callbacks);
+        uint64_t delivered = nv2a_libretro_vblanks();
+        uint64_t pending = nv2a_libretro_vblank_pending();
+        uint64_t acks = nv2a_libretro_vblank_acks();
+        int64_t virtual_ns = qatomic_read(&vblank_virtual_ns);
+        LRLOG_INFO("[xemu] VBlank Debug: requested=%" PRIu64
+                   " callbacks=%" PRIu64 " delivered=%" PRIu64
+                   " already_pending=%" PRIu64 " acked=%" PRIu64
+                   " outstanding=%" PRIu64 " virtual_ms=%.3f wall_s=%.3f\n",
+                   vblank_requests - prev_requested, callbacks - prev_callbacks,
+                   delivered - prev_delivered, pending - prev_pending,
+                   acks - prev_acks, vblank_requests - callbacks,
+                   (virtual_ns - prev_virtual) / 1000000.0, seconds);
+        prev_requested = vblank_requests;
+        prev_callbacks = callbacks;
+        prev_delivered = delivered;
+        prev_pending = pending;
+        prev_acks = acks;
+        prev_virtual = virtual_ns;
         LRLOG_INFO("[xemu] Video Debug: mjr_fps=%u mjr_mspf=%d "
                    "increment_hz=%.3f flip_stall_hz=%.3f frontend_hz=%.3f "
-                   "declared_hz=59.940 window_s=%.6f last_increment_age_ms=%.3f\n",
+                   "declared_hz=%.3f window_s=%.6f last_increment_age_ms=%.3f\n",
                    s.fps, s.mspf,
                    (s.increment_count - last_increment) / seconds,
                    (unsigned int)(s.frame_count - last_frame) / seconds,
-                   runs / ((now - last_log) / 1000000.0), seconds,
+                   runs / ((now - last_log) / 1000000.0), XEMU_REFRESH_RATE, seconds,
                    s.last_increment_us ?
                        (s.sample_time_us - s.last_increment_us) / 1000.0 : -1.0);
 
@@ -2137,6 +2197,12 @@ static void video_debug_log(int64_t now)
                        intervals[valid - 1] / 1000.0, over25);
         }
     } else {
+        prev_requested = vblank_requests;
+        prev_callbacks = qatomic_read(&vblank_callbacks);
+        prev_delivered = nv2a_libretro_vblanks();
+        prev_pending = nv2a_libretro_vblank_pending();
+        prev_acks = nv2a_libretro_vblank_acks();
+        prev_virtual = qatomic_read(&vblank_virtual_ns);
         first_increment = s.increment_count;
         LRLOG_INFO("[xemu] Video Debug: MJR-compatible NV2A counters; "
                    "integer FPS/250ms and integer MSPF; additional rates "
@@ -2225,8 +2291,9 @@ RETRO_API void retro_run(void)
     {
         QemuConsole *con = nv2a_get_vga_console();
         if (con) {
+            vblank_requests++;
             aio_bh_schedule_oneshot(qemu_get_aio_context(),
-                                    (void(*)(void *))graphic_hw_update, con);
+                                    libretro_vblank_bh, con);
         }
     }
 
@@ -2461,7 +2528,7 @@ vk_audio:
          * nothing has to be dropped here; a short queue is filled up with
          * silence. */
         static double audio_frac = 0.0;
-        audio_frac += 48000.0 / 59.94;
+        audio_frac += 48000.0 / XEMU_REFRESH_RATE;
         int want = (int)audio_frac;
         audio_frac -= want;
 

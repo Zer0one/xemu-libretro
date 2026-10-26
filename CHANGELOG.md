@@ -4,6 +4,17 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+## 0.8.138-3-libretro.1 - 2026-10-26
+
+- Preserve the current Xbox-only core as the checkpoint before further upstream and Chihiro integrations. Document the dependency assessment and proposed separate Xbox/Chihiro build profiles; Chihiro support is not included in this release.
+- Automatically avoid the RadeonSI point-size shader trigger on Raven GPUs in OpenGL. Keep point output intact while omitting unused geometry-shader point-size writes for lines and triangles, with separate shader cache keys; no Mesa replacement is required for this workaround.
+- Document a separate Mesa 25.3.6 RadeonSI driver patch validated against the OutRun 2 OpenGL hang on Raven. The driver patch is not bundled with the core.
+- Prevent APU register writes from being starved when an unpaced frontend drains audio faster than it is produced. Hand the APU mutex to pending guest voice-register writes between complete processing blocks, without adding frontend pacing sleeps.
+- Deliver VBlank at the declared refresh interval on the guest virtual clock. Extra frontend calls may repeat the image instead of flooding the guest with interrupts; the frontend remains responsible for presentation and audio pacing.
+- Protect the core during metadata queries as well as initialization. Linux and Android ELF builds set NODELETE at link time, preventing constructor-started RCU threads from surviving an unmapped and reinitialized library.
+- Extend optional Video Debug Logging with VBlank requests, callback completion, interrupt delivery and acknowledgement counts for diagnosing guest progress separately from frontend call rates.
+- Correct the setup guidance: the tested 4627 BIOS boots OutRun 2 and Halo at the retail 64 MB setting. Do not require 128 MB as a workaround for a boot failure.
+
 ## Test build 4 - 2026-10-25
 
 - Add macOS **MoltenVK Queue Submission (Restart)** with Sync (default) and Async choices. Apply the selection to the frontend's Vulkan instance and log its provider; Async requires a compatible patched MoltenVK driver. Restart RetroArch to apply changes.

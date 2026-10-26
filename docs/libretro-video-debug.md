@@ -57,6 +57,16 @@ compositor. The existing `FPS: guest flips; updated pictures; frontend` log
 uses separate scanout-write/display-update counters and a longer window;
 those fields are not aliases of the MJR Video Debug FPS.
 
+`VBlank Debug` additionally distinguishes frontend update requests, completed
+QEMU callbacks, actual NV2A interrupt deliveries, reassertions while already
+pending and guest acknowledgements. All counts except `outstanding` are deltas
+over the diagnostic window; `outstanding` is the cumulative requests minus
+completed callbacks. `virtual_ms` is the change in guest virtual time sampled
+by those callbacks, not a continuously sampled clock when callback completion
+stalls. Extra callbacks within one guest refresh interval do not deliver a
+new VBlank. These fields diagnose guest progress and lock starvation; they do
+not measure physical presentation. See [Linux Boot Validation](libretro-linux-boot.md).
+
 ## Interpreting 59.94 And 60
 
 The core currently declares 59.94 Hz and hands over audio at 48000/59.94

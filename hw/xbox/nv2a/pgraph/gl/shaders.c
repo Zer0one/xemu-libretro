@@ -552,6 +552,21 @@ void pgraph_gl_init_shaders(PGRAPHState *pg)
 {
     PGRAPHGLState *r = pg->gl_renderer_state;
 
+    const char *renderer = (const char *)glGetString(GL_RENDERER);
+    const char *version = (const char *)glGetString(GL_VERSION);
+    GPUProperties *gpu_props = pgraph_gl_get_gpu_properties();
+    /* Raven's legacy GS copy-shader state can retain point-size exports that
+     * RadeonSI removed. Avoid that path for non-point output; keep real points.
+     * This flag participates in ShaderState and both shader cache keys.
+     */
+    gpu_props->omit_nonpoint_point_size = renderer && version &&
+        strstr(renderer, "radeonsi") && strstr(renderer, " raven,") &&
+        strstr(version, "Mesa");
+    if (gpu_props->omit_nonpoint_point_size) {
+        fprintf(stderr, "[xemu] OpenGL Raven/RadeonSI non-point point-size "
+                        "workaround enabled: %s; %s\n", renderer, version);
+    }
+
     qemu_mutex_init(&r->shader_cache_lock);
     qemu_event_init(&r->shader_cache_writeback_complete, false);
 

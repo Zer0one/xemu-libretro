@@ -4743,6 +4743,12 @@ foreach target : target_dirs
         # the frontend's own glib, SDL or GL symbols.
         libretro_link_args += ['-Wl,-Bsymbolic', '-Wl,--exclude-libs,ALL',
           '-Wl,--version-script=' + meson.current_source_dir() / 'ui' / 'libretro.map']
+        if host_os in ['linux', 'android']
+          # QEMU starts its RCU thread in a constructor, before retro_init.
+          # Frontends also dlopen/dlclose the core just to read metadata:
+          # pinning in retro_init alone leaves that thread on unmapped code.
+          libretro_link_args += ['-Wl,-z,nodelete']
+        endif
         libretro_suffix = 'so'
       endif
       xemu_libretro = shared_library('xemu_libretro',
