@@ -1,0 +1,111 @@
+# Libretro Donor Integration
+
+## References And Scope
+
+This integration merges WizzardSK/xemu-libretro's `libretro` branch through
+`252a7accfb5313523928b8b9fd2f44d2f6d9ce06` into this fork's `main`, above the
+`v0.8.138-3.1` checkpoint (`18a331175c`). It keeps the donor's combined Xbox and
+Chihiro core, including its hardware, CPU and renderer updates, shader seeds,
+automatic aspect ratio, EEPROM video settings and frontend inactivity handling.
+The earlier [separation assessment](chihiro-integration-plan.md) is deferred
+research, not an implementation requirement.
+
+The official xemu base is still `0.8.138-3` (`25e1ee2fd5`). The official `upstream`
+branch and the preserved original `libretro` branch are not development branches.
+Standalone UI, packaging and workflows remain excluded. This integration does
+not activate CI or publish a release; future release selections exclude Android.
+
+The Libretro donor is the reference for frontend APIs and data formats. Follow
+its updates, then reapply necessary fork adaptations; document exceptions and
+keep them suitable for a future upstream contribution. Do not create an old
+format compatibility layer without a concrete need.
+
+## Retained Adaptations
+
+The old-port/new-port retention audit is recorded in
+[Donor Retention Audit](libretro-donor-retention-audit.md). It removes one
+obsolete immediate Vulkan view-destruction instruction accidentally retained
+beside the new donor's deferred retirement path. The frontend compositor wait
+remains; old removed features are not restored by default.
+
+- Preserve macOS Vulkan device sharing, portability features, CPU conversion of
+  unsupported primitives, W-depth and packed-depth border approximations, and
+  the opt-in MoltenVK Async submission setting. Sync remains the default.
+- Preserve OpenGL context recreation, Linux metadata-load pinning, APU register
+  fairness, guest-clock VBlank limiting and optional video diagnostics.
+- Preserve the Raven/RadeonSI workaround: omit unused geometry-shader point-size
+  output for lines and triangles, keeping actual point output. Apply the same
+  variant selection to imported shader seeds before warmup, including wide-line
+  geometry shaders.
+- Keep donor shader structure sizes and common field offsets. Additional
+  device-variant flags occupy unused bits or padding, with distinct cache keys.
+- Require Vulkan 1.2, as approved by the developer, matching the donor compiler's
+  minimum target. OpenGL remains available.
+- Require retail MCPX, Xbox BIOS and HDD files only for Xbox. The donor's
+  unconditional frontend validation also required them on Chihiro; the guard
+  in `retro_load_game()` now lets Chihiro reach its separate firmware checks.
+- Keep the runtime library name `Microsoft - Xbox (OG)` for existing frontend
+  settings; metadata also identifies Sega Chihiro. Filenames, `xemu_*` option
+  keys and the `system/xemu/` base remain stable.
+
+Experimental pre-integration snapshots are not guaranteed to be compatible.
+The donor machine state and shader-cache formats are adopted rather than
+introducing a new fork-only migration format. Save states remain unsupported
+in core metadata.
+
+## Verification
+
+Validation used an uncommitted merge on 2026-10-26. Startup logs report the
+checkpoint HEAD, so identify these builds by the source manifest and binary
+hashes, not by that commit label alone. Local evidence, runners and source
+hashes are retained under `build/merge-wizzard-20261026/`.
+
+| Target | Renderer | OutRun 2 Result | Shutdown |
+|---|---|---|---|
+| macOS ARM64, RetroArch 1.22.2 | Vulkan / MoltenVK Sync | Visible 3D attract at 75 seconds | Content close, thread join, exit 0 |
+| macOS ARM64, RetroArch 1.22.2 | OpenGL | Visible 3D attract at 75 seconds | Content close, thread join, exit 0 |
+| Batocera 43.1, RetroArch 1.22.2, Vega 11 | Vulkan | Visible 3D attract at 75 seconds | Content close, thread join, exit 0 |
+| Same Batocera, system Mesa 25.3.6 | OpenGL | Visible 3D attract at 75 seconds; Raven workaround logged | Content close, thread join, exit 0 |
+
+The four runs above used 64 MB, 1x internal scale, VSync and synchronous audio.
+Firmware was read from its existing location; writable HDD and EEPROM fixtures
+were isolated. Original configuration/firmware/fixture hashes and game metadata
+were unchanged. No forced termination was required; neither Batocera run added
+kernel log messages. These runs establish boot and attract, not interactive
+gameplay, audible audio quality, frame pacing or complete rendering accuracy.
+
+An additional Batocera Vulkan regression probe used the same core at 64 MB
+with VSync and audio synchronization both disabled. OutRun 2 reached visible
+3D attract at 75 seconds and closed with a joined emulation thread and exit 0;
+protected inputs and kernel logs were unchanged. This confirms boot progress
+without frontend synchronization, not a frame-pacing result.
+
+The macOS Vulkan lifecycle probe also exercised a two-second frontend pause,
+resume, reset, content close and reload in the same process. It obtained a
+rendered title screen after reset and reload, recorded two loads and two joined
+unloads, and exited normally after 113 seconds. This is a bounded lifecycle
+check, not a prolonged pause or arbitrary title-switch campaign.
+
+The shader-layout audit compared every common member offset and structure
+size with the donor on macOS ARM64, for both GL and Vulkan. `GeomState` remains
+20 bytes, `ShaderState` 2620 bytes and `ShaderModuleCacheKey` 2348 bytes; embedded
+seed section item sizes match. A pre-start validation probe confirmed that
+missing Xbox firmware rejects Xbox before hardware negotiation, while the
+non-Xbox route reaches hardware negotiation without those retail files. It
+rejected the hardware callbacks before starting a machine; it is not a Chihiro
+game or FATX validation test.
+
+Final development binary SHA-256 values:
+
+- macOS ARM64: `80d944338c41a41ac4a947cac19a9d3dbdd9c4ca6b6ab882841763b6293fa4e5`
+- Linux x86_64: `e513bc4581b850ec5a4de57ceff183fc065f319f88bb6f9ece14228f7fa8cafe`
+
+## Remaining Validation
+
+Chihiro game boot awaits a FATX netboot image from the developer. Available
+Xbox-patched Chihiro discs are Xbox content and cannot establish Chihiro board
+compatibility. No conversion or duplicate game media was created.
+
+Windows, macOS x86_64 and Linux AArch64 builds of this integration have not yet
+been verified. The earlier checkpoint's remote build results do not validate
+this merge. All GitHub Actions workflows remain disabled.

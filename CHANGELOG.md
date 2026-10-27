@@ -4,7 +4,14 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
-## 0.8.138-3-libretro.1 - 2026-10-26
+- Preserve the new donor's deferred destruction of Vulkan surface image views. Remove an old immediate-destruction instruction retained during merge resolution, while keeping the frontend compositor wait and deferring framebuffer/view/image retirement until renderer work has settled.
+- Integrate the WizzardSK Libretro update through `252a7accfb`: one core for Xbox and Sega Chihiro, including the donor's renderer/CPU updates, shader seeds, title-based aspect ratio, EEPROM video settings and frontend pause handling. Retain this fork's macOS renderer, video diagnostics, Linux lifecycle and Raven OpenGL corrections.
+- Require Vulkan 1.2, matching the donor shader compiler. OpenGL remains available. Keep the donor shader-cache layout while distinguishing this fork's device-specific shader variants.
+- Load Chihiro without requiring retail Xbox MCPX, BIOS or HDD files. Chihiro uses its separate board firmware and FATX netboot images; Xbox-patched Chihiro discs still run as Xbox content. Chihiro game boot remains unverified pending a suitable netboot image.
+- Preserve the Xbox/Chihiro separation assessment as deferred research; the integrated core uses the donor's combined architecture. Existing experimental snapshots and shader caches are not a compatibility guarantee across this update.
+- Exclude Android from future release builds and packages until requested again. Default and `all` workflow selections cover Windows, Linux and macOS; retain the Android source and explicit build recipe.
+
+## 0.8.138-3.1 - 2026-10-26
 
 - Preserve the current Xbox-only core as the checkpoint before further upstream and Chihiro integrations. Document the dependency assessment and proposed separate Xbox/Chihiro build profiles; Chihiro support is not included in this release.
 - Automatically avoid the RadeonSI point-size shader trigger on Raven GPUs in OpenGL. Keep point output intact while omitting unused geometry-shader point-size writes for lines and triangles, with separate shader cache keys; no Mesa replacement is required for this workaround.

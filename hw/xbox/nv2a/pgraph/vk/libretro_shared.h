@@ -48,6 +48,11 @@ typedef struct XemuLibretroVk {
     bool sampler_mip_lod_bias;
     bool custom_border_color;
     bool memory_budget;
+    /* and the fast paths' extensions and features (create_logical_device
+     * decides the same for a device of the renderer's own) */
+    bool dyn_cull_front, dyn_blend, dyn_vertex_input;
+    bool pipeline_library;
+    bool host_query_reset;
 
     /* Which of the frame images the next display render fills: the
      * frontend's sync index, set by retro_run before it asks for a frame */
@@ -60,10 +65,6 @@ typedef struct XemuLibretroVk {
 extern bool xemu_libretro_vk_context_ready;
 
 extern XemuLibretroVk xemu_libretro_vk;
-
-/* The Reduced Vulkan Buffers core option (buffer.c), read when content is
- * loaded */
-extern bool xemu_libretro_vk_reduced_buffers;
 
 /* The frontend's queue lock, around every use of a shared queue; no-ops
  * while the renderer has a queue of its own */

@@ -1,13 +1,17 @@
 # Xbox and Chihiro Core Separation
 
-Status: dependency assessment completed on 2026-10-26. No Chihiro sources have
-been integrated into the working core, and no split binaries have been built.
+Status: historical dependency assessment completed on 2026-10-26, preserved
+before integration. The developer subsequently chose a full donor merge with
+Xbox and Chihiro in one core. Separation is deferred; the proposed profiles
+and selective import below are research, not the active integration plan.
+No split binaries have been built. The assessment's original source baseline
+and dependency findings are retained below.
 
 ## References
 
 - Fork HEAD at assessment start: `3d45b56f8ffae8cd1604eee2c8e017cc3ea12719`,
   plus the Linux boot, APU, VBlank and Raven OpenGL corrections preserved in
-  `v0.8.138-3-libretro.1`, the release checkpoint before further integrations.
+  `v0.8.138-3.1`, the release checkpoint before further integrations.
 - Official upstream: `25e1ee2fd59a451f2ab57e825b4f8a5414220c8b`.
 - Wizzard reference: `8f7da2e39323e0df6e0a6c321c9f679b36bc624c`.
 - Original Libretro reference: `c3cf3a923cdd3fc54d783b137c96ed6fbea0262e`.

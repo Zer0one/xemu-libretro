@@ -32,13 +32,17 @@ typedef struct {
     bool smooth_shading;
     bool first_vertex_is_provoking;
     bool z_perspective;
-    bool omit_nonpoint_point_size;
+    /* Keep the donor's flag byte and 20-byte seed/cache layout. The spare
+     * bit distinguishes the Raven shader variant without moving fields. */
+    uint8_t wide_lines : 1;
+    uint8_t omit_nonpoint_point_size : 1;
     short tri_rot0;
     short tri_rot1;
 } GeomState;
 
 typedef struct GenGeomGlslOptions {
     bool vulkan;
+    bool locations;
 } GenGeomGlslOptions;
 
 void pgraph_glsl_set_geom_state(PGRAPHState *pg, GeomState *geom);

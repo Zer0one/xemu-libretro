@@ -1,6 +1,6 @@
 # xemu libretro core
 
-A [libretro](https://www.libretro.com/) core of [xemu](https://xemu.app), the original Xbox emulator, for RetroArch and other libretro frontends.
+A [libretro](https://www.libretro.com/) core of [xemu](https://xemu.app) for Xbox and Sega Chihiro, for RetroArch and other libretro frontends.
 
 Frontends display this core as **Microsoft - Xbox (OG)**. The core filename is
 still `xemu_libretro`, support files stay in `system/xemu/`, and option keys
@@ -16,7 +16,7 @@ This fork is developed on `main`. Its Git references have separate roles:
 | Remote | Repository | Role |
 |---|---|---|
 | `origin` | [Zer0one/xemu-libretro](https://github.com/Zer0one/xemu-libretro) | This Libretro fork; development on `main`. |
-| `libretro` | [WizzardSK/xemu-libretro](https://github.com/WizzardSK/xemu-libretro) | The original Libretro port. |
+| `libretro` | [WizzardSK/xemu-libretro](https://github.com/WizzardSK/xemu-libretro) | Libretro integration base; merge updates into `main` and reapply this fork's adaptations. |
 | `upstream` | [xemu-project/xemu](https://github.com/xemu-project/xemu) | Official emulator upstream; the separate local `upstream` branch tracks `upstream/master`. |
 | `michaeljsr` | [MichaelJSr/xemu-macos](https://github.com/MichaelJSr/xemu-macos) | Additional standalone macOS reference, branch `master`. |
 | `cosmicsnow` | [CosmicSnow/xemu-for-macos](https://github.com/CosmicSnow/xemu-for-macos) | Additional standalone macOS reference, branch `master`. |
@@ -24,6 +24,16 @@ This fork is developed on `main`. Its Git references have separate roles:
 The `libretro` branch preserves the original port reference; development is not
 merged into it. The separate `upstream` branch stays free of Libretro changes,
 and full official upstream merges are integrated into `main`.
+
+Libretro integration follows the donor's APIs and formats unless a documented
+exception is needed. The current donor integration is `252a7accfb`. It keeps
+Xbox and Chihiro in one core; the earlier
+[separation assessment](docs/chihiro-integration-plan.md) is preserved as deferred
+research. The official xemu revision and the Libretro donor revision are tracked
+separately.
+
+See [Libretro Donor Integration](docs/libretro-donor-integration.md) for retained
+adaptations, validation results and the pending Chihiro media requirement.
 
 The two additional remotes provide references for separately reviewed
 adaptations. The official upstream remains the emulator base. Their fetch
@@ -41,7 +51,7 @@ workflows. Their recipes target `main` when explicitly re-enabled; no automatic
 builds or releases are published automatically by this fork.
 
 Manual builds are available from [Releases](https://github.com/Zer0one/xemu-libretro/releases).
-**v0.8.138-3-libretro.1** preserves the Xbox-only core before further upstream and
+**v0.8.138-3.1** preserves the Xbox-only core before further upstream and
 Chihiro integrations, with the Linux boot/lifetime and Raven OpenGL corrections.
 The macOS ARM64 package for Apple Silicon requires
 macOS 14 or later because of its bundled libraries. It includes the core,
@@ -50,13 +60,18 @@ configured core-info directory. MoltenVK, console firmware and games are not
 included. Sync is the default; Async requires a compatible patched frontend
 MoltenVK driver.
 
-The proposed separate Xbox and Chihiro cores are documented in the
-[integration assessment](docs/chihiro-integration-plan.md); they are not part
-of this release. The official xemu base remains `0.8.138-3` (`25e1ee2fd5`).
+The published checkpoint does not include the combined Xbox/Chihiro integration
+being developed on `main`. The official xemu base remains `0.8.138-3`
+(`25e1ee2fd5`).
 
-Release tags use `v<upstream.version>-libretro.<revision>`. The upstream part
+Release tags use `v<upstream.version>.<core revision>`. The upstream part
 identifies the integrated xemu version, including its commits-since-tag count;
-the Libretro revision increases for releases on that same base.
+the final core revision increases for releases on that same base.
+
+Future releases target Windows, Linux and macOS. Android builds and packages
+are excluded until the developer requests their return. The workflow defaults
+and `all` selection omit Android; its source and explicit build recipe remain
+available. Older Android release assets are unaffected.
 
 RetroArch's Online Updater distributes the original Libretro port through its
 buildbot. Those downloads are independent of this fork's changes. Use this
@@ -69,7 +84,7 @@ fork's release package or build from `main` to use its adaptations.
 
 ## Setup
 
-Put these files into RetroArch's system directory, under `system/xemu/`:
+For Xbox, put these files into RetroArch's system directory, under `system/xemu/`:
 
 | File | What it is |
 |---|---|
@@ -89,9 +104,25 @@ establish a requirement for 128 MB. Increasing memory is not a boot-failure fix.
 
 Xbox games as `.iso` or `.xiso` (xemu's XISO format, as made by extract-xiso).
 
+Chihiro uses FATX netboot `.bin` images and board firmware under
+`system/xemu/Chihiro/`: `chihiro_xbox_bios.bin`, `fpr21042_m29w160et.bin`,
+`ic10_g24lc64.bin`, `ic11_24lc024.bin` and `pc20_g24lc64.bin`.
+Linked cabinets additionally use `ver1305.bin`. The core selects the machine
+from the content, following the donor. Xbox-patched Chihiro discs are Xbox
+content. Switching between Xbox and Chihiro requires restarting RetroArch.
+Chihiro game boot has not yet been verified in this fork: the available test
+media are Xbox-patched discs, not netboot images.
+
+Shader-cache formats follow the donor; device-specific shader variants remain
+distinct. Save states remain experimental and unsupported in core metadata;
+snapshots from before this integration are not guaranteed to load correctly.
+
 ## Video
 
 Select **Graphics API (Restart)** in Core Options and use RetroArch's matching `glcore` or `vulkan` video driver. Vulkan is the default; Android uses Vulkan only. macOS supports Vulkan through MoltenVK as well as OpenGL. The Metal path converts unsupported primitives on the CPU and uses hardware depth interpolation, which approximates NV2A depth behavior. Vulkan uses a dedicated renderer queue when available and hands frames to the frontend through GPU semaphores. See [Vulkan Integration And Validation](docs/libretro-vulkan.md) for driver selection, sources, evidence and remaining limits.
+
+The integrated shader compiler requires Vulkan 1.2 or later. OpenGL requires
+Core 4.0 (macOS provides 4.1).
 
 On macOS, **MoltenVK Queue Submission (Restart)** under Core Options → Video selects **Sync** (default) or **Async** host submission. Async requires a compatible MoltenVK driver with the acquisition and presentation fixes. Restart RetroArch after changing it; closing and reopening content may retain the existing Vulkan instance. The option applies only to the frontend-selected MoltenVK instance, whose provider path and requested mode are logged. If `VK_EXT_layer_settings` is unavailable, the core logs a warning and retains the driver's default. This option does not change VSync, audio synchronization or shader compilation, and has no effect on OpenGL.
 

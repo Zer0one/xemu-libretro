@@ -10,15 +10,16 @@ on:
   workflow_dispatch:
     inputs:
       platforms:
-        description: 'Platforms to build, comma-separated (linux, windows, android, macos), or all'
+        description: 'Platforms to build (linux, windows, macos), or all; Android requires explicit selection and renewed developer approval'
         type: string
-        default: all
+        default: linux,windows,macos
   push:
     branches: [main]
 
 # Test builds can be limited to the platforms their testers use: the
 # platforms input (workflow_dispatch) lists them. Pushes and "all" build
-# everything.
+# Linux, Windows and macOS. Android is excluded from future releases until
+# the developer asks to restore it; retain its recipe for explicit testing.
 jobs:
   windows-x86_64:
     if: github.ref == 'refs/heads/main' && (github.event_name != 'workflow_dispatch' || inputs.platforms == 'all' || contains(inputs.platforms, 'windows'))
@@ -208,7 +209,7 @@ jobs:
   # configure with what Android has no use for left out. The renderer is
   # Vulkan, through the frontend's context.
   android:
-    if: github.ref == 'refs/heads/main' && (github.event_name != 'workflow_dispatch' || inputs.platforms == 'all' || contains(inputs.platforms, 'android'))
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && contains(inputs.platforms, 'android')
     name: Android ${{ matrix.abi }}
     runs-on: ubuntu-24.04
     strategy:
