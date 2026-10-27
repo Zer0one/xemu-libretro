@@ -246,6 +246,8 @@ typedef struct PGRAPHState {
     bool program_data_dirty;
     float vsh_carry_fog[4];
     bool vsh_carry_cache_dirty;
+    /* Host-only cache of fog slices, never serialized. */
+    GHashTable *vsh_carry_slices;
     Nv2aVshProgram *vsh_carry_cached_programs[NV2A_MAX_TRANSFORM_PROGRAM_LENGTH];
 
     uint32_t vsh_constants[NV2A_VERTEXSHADER_CONSTANTS][4];
@@ -321,6 +323,8 @@ typedef struct PGRAPHState {
     bool waiting_for_context_switch;
 
     bool flush_pending;
+    /* Host GPU state predates restored RAM; discard it without writeback. */
+    bool flush_discard;
     QemuEvent flush_complete;
 
     bool sync_pending;

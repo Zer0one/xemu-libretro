@@ -489,6 +489,7 @@ void pgraph_destroy(PGRAPHState *pg)
     NV2AState *d = container_of(pg, NV2AState, pgraph);
 
     pgraph_vsh_carryover_invalidate_cache(pg);
+    g_clear_pointer(&pg->vsh_carry_slices, g_hash_table_unref);
 
     if (pg->renderer->ops.finalize) {
        pg->renderer->ops.finalize(d);

@@ -3922,6 +3922,13 @@ void *address_space_map(AddressSpace *as,
     *plen = flatview_extend_translation(fv, addr, len, mr, xlat,
                                         l, is_write, attrs);
     fuzz_dma_read_cb(addr, *plen, mr);
+#ifdef XBOX
+    /* Mapped DMA must observe the same GPU/RAM coherency callbacks as
+     * flatview accesses, before the device reads or overwrites guest RAM. */
+    mem_check_access_callback_ramaddr(
+        qemu_get_cpu(0), memory_region_get_ram_addr(mr) + xlat, *plen,
+        is_write ? BP_MEM_WRITE : BP_MEM_READ);
+#endif
     return qemu_ram_ptr_length(mr->ram_block, xlat, plen, true, is_write);
 }
 

@@ -124,6 +124,16 @@ Select **Graphics API (Restart)** in Core Options and use RetroArch's matching `
 The integrated shader compiler requires Vulkan 1.2 or later. OpenGL requires
 Core 4.0 (macOS provides 4.1).
 
+When all staging allocations are host-visible, coherent and device-local, the
+Vulkan renderer binds them directly and avoids redundant copies. Other memory
+types retain separate device buffers and staging copies, with explicit flushes
+for noncoherent writes. Selection is based on Vulkan allocation properties on
+every platform. MJR's USB/reset corrections, reduced CPU fog-carryover work,
+mapped-DMA coherence and NVNet receive-queue recovery also apply independently
+of macOS. Snapshot restoration discards old GPU surfaces and visibility reports
+before they can overwrite restored RAM; save states remain experimental. See
+[MJR Adaptations](docs/libretro-mjr-adaptations.md) for sources and validation.
+
 On macOS, **MoltenVK Queue Submission (Restart)** under Core Options → Video selects **Sync** (default) or **Async** host submission. Async requires a compatible MoltenVK driver with the acquisition and presentation fixes. Restart RetroArch after changing it; closing and reopening content may retain the existing Vulkan instance. The option applies only to the frontend-selected MoltenVK instance, whose provider path and requested mode are logged. If `VK_EXT_layer_settings` is unavailable, the core logs a warning and retains the driver's default. This option does not change VSync, audio synchronization or shader compilation, and has no effect on OpenGL.
 
 For Linux boot failures and the unpaced-frontend corrections, see

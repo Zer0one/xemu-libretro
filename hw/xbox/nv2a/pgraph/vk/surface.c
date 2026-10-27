@@ -2141,16 +2141,21 @@ void pgraph_vk_surface_flush(NV2AState *d)
 
     SurfaceBinding *s, *next;
     QTAILQ_FOREACH_SAFE(s, &r->surfaces, entry, next) {
-        // FIXME: We should download all surfaces to ram, but need to
-        //        investigate corruption issue
-        pgraph_vk_surface_download_if_dirty(d, s);
+        if (!qatomic_read(&pg->flush_discard)) {
+            pgraph_vk_surface_download_if_dirty(d, s);
+        } else {
+            s->writeback_owed = false;
+            s->draw_dirty = false;
+            s->download_pending = false;
+        }
         invalidate_surface(d, s);
     }
     /* After a snapshot load or a reset RAM is authoritative: an owed
      * writeback goes without being written, and what was learnt of the old
      * RAM is forgotten. A scale change has settled them all beforehand; at
      * a renderer switch RAM is live, and the prune below writes them back. */
-    if (pg->renderer_switch_phase != PGRAPH_RENDERER_SWITCH_PHASE_CPU_WAITING) {
+    if (qatomic_read(&pg->flush_discard) ||
+        pg->renderer_switch_phase != PGRAPH_RENDERER_SWITCH_PHASE_CPU_WAITING) {
         QTAILQ_FOREACH(s, &r->invalid_surfaces, entry) {
             if (s->writeback_owed) {
                 parked_owed_settled(d, s);

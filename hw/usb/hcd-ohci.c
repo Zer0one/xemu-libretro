@@ -502,12 +502,16 @@ static inline int ohci_put_iso_td(OHCIState *ohci,
 }
 
 static inline int ohci_put_hcca(OHCIState *ohci,
-                                dma_addr_t addr, struct ohci_hcca *hcca)
+                                dma_addr_t addr, struct ohci_hcca *hcca,
+                                bool done)
 {
+    /* OHCI 1.0a 4.4: write HccaDoneHead only when handing over a queue. */
     return dma_memory_write(ohci->as,
                             addr + ohci->localmem_base + HCCA_WRITEBACK_OFFSET,
                             (char *)hcca + HCCA_WRITEBACK_OFFSET,
-                            HCCA_WRITEBACK_SIZE, MEMTXATTRS_UNSPECIFIED);
+                            done ? HCCA_WRITEBACK_SIZE :
+                            offsetof(struct ohci_hcca, done) -
+                            HCCA_WRITEBACK_OFFSET, MEMTXATTRS_UNSPECIFIED);
 }
 
 /* Read/Write the contents of a TD from/to main memory.  */
@@ -1183,12 +1187,11 @@ static void ohci_eof_timer(OHCIState *ohci)
 {
     timer_mod(ohci->eof_timer, ohci->sof_time + usb_frame_time);
 }
-/* Set a timer for EOF and generate a SOF event */
+/* Advance SOF and schedule EOF; its IRQ follows HCCA writeback. */
 static void ohci_sof(OHCIState *ohci)
 {
     ohci->sof_time += usb_frame_time;
     ohci_eof_timer(ohci);
-    ohci_set_interrupt(ohci, OHCI_INTR_SF);
 }
 
 /* Process Control and Bulk lists. */
@@ -1217,6 +1220,7 @@ static void ohci_frame_boundary(void *opaque)
 {
     OHCIState *ohci = opaque;
     struct ohci_hcca hcca;
+    uint32_t intr = 0;
 
     if (ohci_read_hcca(ohci, ohci->hcca, &hcca)) {
         trace_usb_ohci_hcca_read_error(ohci->hcca);
@@ -1253,17 +1257,21 @@ static void ohci_frame_boundary(void *opaque)
     /* When the HC updates frame number, set pad to 0. Ref OHCI Spec 4.4.1*/
     hcca.pad = 0;
 
+    if (ohci->frame_number == 0x8000 || ohci->frame_number == 0) {
+        intr |= OHCI_INTR_FNO;
+    }
+
     if (ohci->done_count == 0 && !(ohci->intr_status & OHCI_INTR_WD)) {
         if (!ohci->done) {
             abort();
         }
-        if (ohci->intr & ohci->intr_status) {
+        if (ohci->intr & (ohci->intr_status | intr)) {
             ohci->done |= 1;
         }
         hcca.done = cpu_to_le32(ohci->done);
         ohci->done = 0;
         ohci->done_count = 7;
-        ohci_set_interrupt(ohci, OHCI_INTR_WD);
+        intr |= OHCI_INTR_WD;
     }
 
     if (ohci->done_count != 7 && ohci->done_count != 0) {
@@ -1272,10 +1280,15 @@ static void ohci_frame_boundary(void *opaque)
     /* Do SOF stuff here */
     ohci_sof(ohci);
 
-    /* Writeback HCCA */
-    if (ohci_put_hcca(ohci, ohci->hcca, &hcca)) {
+    /* A DMA access can drop the BQL through NV2A's surface callbacks.
+     * Publish HCCA before raising frame interrupts, so the guest cannot
+     * acknowledge WDH before the done queue reaches RAM (OHCI 1.0a 7.1.4).
+     * Do not overwrite a head the guest cleared when no queue is delivered. */
+    if (ohci_put_hcca(ohci, ohci->hcca, &hcca, intr & OHCI_INTR_WD)) {
         ohci_die(ohci);
+        return;
     }
+    ohci_set_interrupt(ohci, intr | OHCI_INTR_SF);
 }
 
 /*

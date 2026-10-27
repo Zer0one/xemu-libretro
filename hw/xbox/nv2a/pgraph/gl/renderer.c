@@ -178,8 +178,12 @@ static void pgraph_gl_flip_stall(NV2AState *d)
 
 static void pgraph_gl_flush(NV2AState *d)
 {
+    PGRAPHState *pg = &d->pgraph;
     PGRAPHGLState *r = d->pgraph.gl_renderer_state;
 
+    if (qatomic_read(&pg->flush_discard)) {
+        pgraph_gl_discard_reports(pg);
+    }
     pgraph_gl_surface_flush(d);
     /* The surface list is rebuilt: the display resolve compares surface
      * pointers, so forget the one it published from. */
@@ -189,6 +193,7 @@ static void pgraph_gl_flush(NV2AState *d)
     pgraph_gl_uniform_sources_invalidate(r);
     /* FIXME: Flush more? */
 
+    qatomic_set(&pg->flush_discard, false);
     qatomic_set(&d->pgraph.flush_pending, false);
     qemu_event_set(&d->pgraph.flush_complete);
 }
@@ -207,6 +212,9 @@ static void pgraph_gl_process_pending(NV2AState *d)
         qatomic_read(&r->shader_cache_writeback_pending)) {
         qemu_mutex_unlock(&d->pfifo.lock);
         qemu_mutex_lock(&d->pgraph.lock);
+        if (qatomic_read(&pg->flush_discard)) {
+            pgraph_gl_flush(d);
+        }
         if (qatomic_read(&r->downloads_pending)) {
             pgraph_gl_process_pending_downloads(d);
         }

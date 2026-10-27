@@ -541,6 +541,7 @@ void pgraph_gl_init_display(NV2AState *d);
 void pgraph_gl_finalize_display(PGRAPHState *pg);
 void pgraph_gl_init_reports(NV2AState *d);
 void pgraph_gl_finalize_reports(PGRAPHState *pg);
+void pgraph_gl_discard_reports(PGRAPHState *pg);
 void pgraph_gl_init_shaders(PGRAPHState *pg);
 void pgraph_gl_finalize_shaders(PGRAPHState *pg);
 void pgraph_gl_init_surfaces(PGRAPHState *pg);

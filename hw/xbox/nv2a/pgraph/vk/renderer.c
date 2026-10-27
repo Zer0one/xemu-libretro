@@ -108,8 +108,21 @@ static void pgraph_vk_finalize(NV2AState *d)
 static void pgraph_vk_flush(NV2AState *d)
 {
     PGRAPHState *pg = &d->pgraph;
+    PGRAPHVkState *r = pg->vk_renderer_state;
+    bool discard = qatomic_read(&pg->flush_discard);
 
+    if (discard) {
+        pgraph_vk_discard_reports(pg);
+    }
     pgraph_vk_finish(pg, VK_FINISH_REASON_FLUSH);
+    if (discard) {
+        /* finish closed the old query and settled every slot. Reuse the
+         * pool from zero, without attributing old results to new reports. */
+        r->num_queries_in_flight = 0;
+        r->queries_submitted = 0;
+        r->queries_read = 0;
+        r->new_query_needed = true;
+    }
     pgraph_vk_surface_flush(d);
     pgraph_vk_mark_textures_possibly_dirty(d, 0, memory_region_size(d->vram));
     pgraph_vk_update_vertex_ram_buffer(&d->pgraph, 0, d->vram_ptr,
@@ -121,6 +134,7 @@ static void pgraph_vk_flush(NV2AState *d)
 
     /* FIXME: Flush more? */
 
+    qatomic_set(&pg->flush_discard, false);
     qatomic_set(&d->pgraph.flush_pending, false);
     qemu_event_set(&d->pgraph.flush_complete);
 }
@@ -152,6 +166,11 @@ static void pgraph_vk_process_pending(NV2AState *d)
     ) {
         qemu_mutex_unlock(&d->pfifo.lock);
         qemu_mutex_lock(&d->pgraph.lock);
+        if (qatomic_read(&d->pgraph.flush_discard)) {
+            /* Invalidate the old state before a queued download, report
+             * or display resolve could touch the restored RAM. */
+            pgraph_vk_flush(d);
+        }
         if (qatomic_read(&r->downloads_pending)) {
             pgraph_vk_process_pending_downloads(d);
         }

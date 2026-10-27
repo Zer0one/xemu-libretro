@@ -85,6 +85,20 @@ void pgraph_vk_finalize_reports(PGRAPHState *pg)
     }
 }
 
+/* Drop reports of the previous VM state without writing their destinations
+ * in restored RAM. Query counters are reset after the command buffers settle. */
+void pgraph_vk_discard_reports(PGRAPHState *pg)
+{
+    PGRAPHVkState *r = pg->vk_renderer_state;
+    QueryReport *report;
+    while ((report = QSIMPLEQ_FIRST(&r->report_queue)) != NULL) {
+        QSIMPLEQ_REMOVE_HEAD(&r->report_queue, entry);
+        g_free(report);
+    }
+    pg->reports_pending = false;
+    r->zpass_pixel_count_result = 0;
+}
+
 void pgraph_vk_clear_report_value(NV2AState *d)
 {
     PGRAPHState *pg = &d->pgraph;
@@ -128,6 +142,10 @@ void pgraph_vk_process_pending_reports_internal(NV2AState *d)
 {
     PGRAPHState *pg = &d->pgraph;
     PGRAPHVkState *r = pg->vk_renderer_state;
+
+    if (qatomic_read(&pg->flush_discard)) {
+        return;
+    }
 
     NV2A_VK_DGROUP_BEGIN("Processing queries");
 

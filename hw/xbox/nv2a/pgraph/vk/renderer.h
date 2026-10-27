@@ -110,7 +110,7 @@ enum Buffer {
     BUFFER_COUNT
 };
 
-/* Each staging buffer and the device buffer its sync copy fills, in the
+/* Each staging buffer and its device buffer or direct alias, in the
  * order of alt_staging[] and alt_device[] (buffer.c). */
 typedef struct StagedBuffer {
     int staging, device;
@@ -617,6 +617,9 @@ typedef struct PGRAPHVkState {
     int descriptor_set_index;
 
     StorageBuffer storage_buffers[BUFFER_COUNT];
+    /* Coherent device-local staging can be bound directly. Both rotation
+     * sets then alias their staging owners instead of holding device twins. */
+    bool direct_staging;
 
     MemorySyncRequirement vertex_ram_buffer_syncs[NV2A_VERTEXSHADER_ATTRIBUTES];
     size_t num_vertex_ram_buffer_syncs;
@@ -930,6 +933,7 @@ void pgraph_vk_ref_state_modules(PGRAPHVkState *r, const ShaderState *st,
 // reports.c
 void pgraph_vk_init_reports(PGRAPHState *pg);
 void pgraph_vk_finalize_reports(PGRAPHState *pg);
+void pgraph_vk_discard_reports(PGRAPHState *pg);
 void pgraph_vk_clear_report_value(NV2AState *d);
 void pgraph_vk_get_report(NV2AState *d, uint32_t parameter);
 void pgraph_vk_process_pending_reports(NV2AState *d);

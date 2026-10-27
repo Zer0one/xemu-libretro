@@ -3149,6 +3149,9 @@ static bool snapshot_dispatch(int request_type, int timeout_ms)
     snapshot_done = false;
     snapshot_result = false;
     snapshot_request = request_type;
+    /* The frontend stops retro_run while waiting for this callback. Its
+     * VBlank requests can no longer wake an idle QEMU main loop for us. */
+    qemu_notify_event();
 
     /* Wait for the emu thread to process it */
     if (qemu_sem_timedwait(&snapshot_done_sem, timeout_ms) != 0) {

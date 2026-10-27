@@ -77,6 +77,10 @@ void pgraph_gl_process_pending_reports(NV2AState *d)
     PGRAPHGLState *r = pg->gl_renderer_state;
     QueryReport *report, *next;
 
+    if (qatomic_read(&pg->flush_discard)) {
+        return;
+    }
+
     /* The hardware writes a report when the GPU reaches it: one is served
      * once its queries are available, the guest reading the old value
      * meanwhile (OutRun 2 and Virtua Cop 3 keep the last result). MEASURED
@@ -103,6 +107,11 @@ void pgraph_gl_drain_pending_reports(NV2AState *d)
 {
     PGRAPHGLState *r = d->pgraph.gl_renderer_state;
     QueryReport *report, *next;
+
+    if (qatomic_read(&d->pgraph.flush_discard)) {
+        pgraph_gl_discard_reports(&d->pgraph);
+        return;
+    }
 
     QSIMPLEQ_FOREACH_SAFE(report, &r->report_queue, entry, next) {
         process_pending_report(d, report);
@@ -169,26 +178,37 @@ void pgraph_gl_get_report(NV2AState *d, uint32_t parameter)
     r->work_since_flush = false;
 }
 
-void pgraph_gl_finalize_reports(PGRAPHState *pg)
+/* Query names and results belong to the old GPU state, not restored RAM. */
+void pgraph_gl_discard_reports(PGRAPHState *pg)
 {
     PGRAPHGLState *r = pg->gl_renderer_state;
-
-    QueryReport *report, *next;
-    QSIMPLEQ_FOREACH_SAFE (report, &r->report_queue, entry, next) {
-        if (report->query_count) {
-            glDeleteQueries(report->query_count, report->queries);
-        }
-        QSIMPLEQ_REMOVE_HEAD(&r->report_queue, entry);
-        g_free(report);
-    }
-
     if (r->gl_zpass_query_open) {
         glEndQuery(GL_SAMPLES_PASSED);
         r->gl_zpass_query_open = false;
     }
+    QueryReport *report, *next;
+    QSIMPLEQ_FOREACH_SAFE(report, &r->report_queue, entry, next) {
+        /* Clear entries have no query array. */
+        if (!report->clear) {
+            if (report->query_count) {
+                glDeleteQueries(report->query_count, report->queries);
+            }
+            g_free(report->queries);
+        }
+        QSIMPLEQ_REMOVE_HEAD(&r->report_queue, entry);
+        g_free(report);
+    }
     if (r->gl_zpass_pixel_count_query_count) {
         glDeleteQueries(r->gl_zpass_pixel_count_query_count,
                         r->gl_zpass_pixel_count_queries);
-        r->gl_zpass_pixel_count_query_count = 0;
     }
+    g_clear_pointer(&r->gl_zpass_pixel_count_queries, g_free);
+    r->gl_zpass_pixel_count_query_count = 0;
+    r->zpass_pixel_count_result = 0;
+    pg->reports_pending = false;
+}
+
+void pgraph_gl_finalize_reports(PGRAPHState *pg)
+{
+    pgraph_gl_discard_reports(pg);
 }

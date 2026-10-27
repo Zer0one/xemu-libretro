@@ -46,15 +46,52 @@ static void create_buffer(PGRAPHState *pg, StorageBuffer *buffer)
                 (unsigned long long)buffer->buffer_size, buffer->usage, result);
     }
     VK_CHECK(result);
+    vmaGetAllocationMemoryProperties(r->allocator, buffer->allocation,
+                                     &buffer->properties);
 }
 
 static void destroy_buffer(PGRAPHState *pg, StorageBuffer *buffer)
 {
     PGRAPHVkState *r = pg->vk_renderer_state;
 
-    vmaDestroyBuffer(r->allocator, buffer->buffer, buffer->allocation);
+    /* Direct-staging device handles borrow the staging allocation. */
+    if (buffer->allocation != VK_NULL_HANDLE) {
+        vmaDestroyBuffer(r->allocator, buffer->buffer, buffer->allocation);
+    }
     buffer->buffer = VK_NULL_HANDLE;
     buffer->allocation = VK_NULL_HANDLE;
+}
+
+static bool is_staged_device(int index)
+{
+    return index == BUFFER_INDEX || index == BUFFER_VERTEX_INLINE ||
+           index == BUFFER_UNIFORM;
+}
+
+static bool can_bind_staging(const StorageBuffer *buffer)
+{
+    const VkMemoryPropertyFlags required =
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+    return (buffer->properties & required) == required;
+}
+
+static void alias_staging(StorageBuffer *device, const StorageBuffer *staging)
+{
+    assert(device->allocation == VK_NULL_HANDLE);
+    device->buffer = staging->buffer;
+    device->buffer_size = staging->buffer_size;
+    device->buffer_offset = 0;
+    device->properties = staging->properties;
+}
+
+static void retain_memory_type(PGRAPHVkState *r, StorageBuffer *buffer)
+{
+    VmaAllocationInfo info;
+    vmaGetAllocationInfo(r->allocator, buffer->allocation, &info);
+    /* Resizing must preserve the properties required by direct staging. */
+    buffer->alloc_info.memoryTypeBits = 1u << info.memoryType;
 }
 
 /*
@@ -146,7 +183,8 @@ void pgraph_vk_init_buffers(NV2AState *d)
 
     r->storage_buffers[BUFFER_INDEX_STAGING] = (StorageBuffer){
         .alloc_info = host_alloc_create_info,
-        .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+        .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+                 VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
         .buffer_size = r->storage_buffers[BUFFER_INDEX].buffer_size,
     };
 
@@ -180,7 +218,8 @@ void pgraph_vk_init_buffers(NV2AState *d)
 
     r->storage_buffers[BUFFER_VERTEX_INLINE_STAGING] = (StorageBuffer){
         .alloc_info = host_alloc_create_info,
-        .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+        .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
         .buffer_size = r->storage_buffers[BUFFER_VERTEX_INLINE].buffer_size,
     };
 
@@ -193,12 +232,15 @@ void pgraph_vk_init_buffers(NV2AState *d)
 
     r->storage_buffers[BUFFER_UNIFORM_STAGING] = (StorageBuffer){
         .alloc_info = host_alloc_create_info,
-        .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+        .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+                 VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
         .buffer_size = r->storage_buffers[BUFFER_UNIFORM].buffer_size,
     };
 
     for (int i = 0; i < BUFFER_COUNT; i++) {
-        create_buffer(pg, &r->storage_buffers[i]);
+        if (!is_staged_device(i)) {
+            create_buffer(pg, &r->storage_buffers[i]);
+        }
     }
 
     /* Second staging set for the ring rotation, and its device
@@ -210,7 +252,7 @@ void pgraph_vk_init_buffers(NV2AState *d)
             &r->storage_buffers[pgraph_vk_staged_buffers[i].device];
         r->alt_staging[i] = (StorageBuffer){
             .alloc_info = host_alloc_create_info,
-            .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+            .usage = staging->usage,
             .buffer_size = staging->buffer_size,
         };
         create_buffer(pg, &r->alt_staging[i]);
@@ -221,8 +263,32 @@ void pgraph_vk_init_buffers(NV2AState *d)
             .usage = device->usage,
             .buffer_size = device->buffer_size,
         };
-        create_buffer(pg, &r->alt_device[i]);
     }
+
+    /* This is a property of the actual allocations, not the OS or GPU name.
+     * Discrete/noncoherent memory retains the ordinary staging-copy path. */
+    r->direct_staging = true;
+    for (int i = 0; i < ARRAY_SIZE(pgraph_vk_staged_buffers); i++) {
+        const StagedBuffer *f = &pgraph_vk_staged_buffers[i];
+        r->direct_staging &= can_bind_staging(&r->storage_buffers[f->staging]) &&
+                             can_bind_staging(&r->alt_staging[i]);
+    }
+    for (int i = 0; i < ARRAY_SIZE(pgraph_vk_staged_buffers); i++) {
+        const StagedBuffer *f = &pgraph_vk_staged_buffers[i];
+        if (r->direct_staging) {
+            retain_memory_type(r, &r->storage_buffers[f->staging]);
+            retain_memory_type(r, &r->alt_staging[i]);
+            alias_staging(&r->storage_buffers[f->device],
+                           &r->storage_buffers[f->staging]);
+            alias_staging(&r->alt_device[i], &r->alt_staging[i]);
+        } else {
+            create_buffer(pg, &r->storage_buffers[f->device]);
+            create_buffer(pg, &r->alt_device[i]);
+        }
+    }
+    fprintf(stderr, "[xemu] Vulkan staging: %s\n", r->direct_staging
+            ? "direct coherent device-local buffers (one command buffer)"
+            : "separate device buffers (staging copies)");
 
     for (int i = 0; i < 2; i++) {
         create_buffer(pg, &r->vertex_arena[i]);
@@ -331,9 +397,15 @@ void pgraph_vk_buffer_ensure_capacity(PGRAPHState *pg, int index,
         const StagedBuffer *f = &pgraph_vk_staged_buffers[i];
         if (index == f->staging || index == f->device) {
             recreate_buffer(pg, &r->storage_buffers[f->staging], size);
-            recreate_buffer(pg, &r->storage_buffers[f->device], size);
             recreate_buffer(pg, &r->alt_staging[i], size);
-            recreate_buffer(pg, &r->alt_device[i], size);
+            if (r->direct_staging) {
+                alias_staging(&r->storage_buffers[f->device],
+                               &r->storage_buffers[f->staging]);
+                alias_staging(&r->alt_device[i], &r->alt_staging[i]);
+            } else {
+                recreate_buffer(pg, &r->storage_buffers[f->device], size);
+                recreate_buffer(pg, &r->alt_device[i], size);
+            }
             return;
         }
     }

@@ -454,6 +454,17 @@ static void nv2a_reset(NV2AState *d)
     ptimer_reset(d);
     d->pcrtc.pending_interrupts = 0;
 
+    /* Reset interrupt enables and PGRAPH's pending state as at power-on.
+     * A stale high IRQ can otherwise survive PIC initialization and leave
+     * the next guest waiting forever for its first GPU context switch. */
+    d->pmc.enabled_interrupts = 0;
+    d->pfifo.enabled_interrupts = 0;
+    qatomic_set(&d->pgraph.pending_interrupts, 0);
+    qatomic_set(&d->pgraph.enabled_interrupts, 0);
+    d->ptimer.enabled_interrupts = 0;
+    d->pcrtc.enabled_interrupts = 0;
+    nv2a_update_irq(d);
+
     for (int i = 0; i < 256; i++) {
         d->puserdac.palette[i*3]   = i;
         d->puserdac.palette[i*3+1] = i;
@@ -592,6 +603,7 @@ static int nv2a_post_load(void *opaque, int version_id)
     /* The switch registers come back with the snapshot; the subchannel they
      * were loaded for does not. */
     d->pgraph.ctx_switch_subchannel = -1;
+    qatomic_set(&d->pgraph.flush_discard, true);
     qatomic_set(&d->pgraph.flush_pending, true);
     /* The compression flag follows the restored PFB registers. */
     pfb_update_zcomp(d);
