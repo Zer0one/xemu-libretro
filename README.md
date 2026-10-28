@@ -317,4 +317,3 @@ the host choice does not change the core profiles or automatically enable CI.
 ## License
 
 GPL-2.0, as xemu and QEMU. See [LICENSE](LICENSE).
-
