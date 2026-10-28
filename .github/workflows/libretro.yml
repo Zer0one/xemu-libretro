@@ -17,6 +17,11 @@ on:
         type: choice
         options: [dedicated, xbox, chihiro, full]
         default: dedicated
+      macos_runner:
+        description: 'macOS build host (Intel is an alternative when ARM64 hosted capacity is unavailable; both target architectures are retained)'
+        type: choice
+        options: [macos-15, macos-15-intel]
+        default: macos-15
   push:
     branches: [main]
 
@@ -321,7 +326,7 @@ jobs:
   macos:
     if: github.ref == 'refs/heads/main' && (github.event_name != 'workflow_dispatch' || inputs.platforms == 'all' || contains(inputs.platforms, 'macos'))
     name: macOS ${{ matrix.arch }} ${{ matrix.profile }}
-    runs-on: macos-15
+    runs-on: ${{ inputs.macos_runner || 'macos-15' }}
     strategy:
       fail-fast: false
       matrix:

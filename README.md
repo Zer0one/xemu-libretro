@@ -309,6 +309,12 @@ platform-specific, as shown in the CI recipes.
 The disabled CI workflow `.github/workflows/libretro.yml` contains the build
 recipes and dependencies for Windows, Linux, Android and macOS.
 
+For an authorized manual CI run, `macos_runner` selects the build host:
+`macos-15` by default, or `macos-15-intel` when ARM64 hosted capacity is
+unavailable. Both selections still build the ARM64 and x86_64 package targets;
+the host choice does not change the core profiles or automatically enable CI.
+
 ## License
 
 GPL-2.0, as xemu and QEMU. See [LICENSE](LICENSE).
+

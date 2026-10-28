@@ -6,6 +6,8 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## 0.8.138-9.1 - 2026-10-28
 
+- Allow an explicitly selected Intel macOS build host when GitHub ARM64 runner capacity is unavailable, retaining both ARM64 and Intel package targets. Keep workflows disabled outside authorized release builds.
+
 - Restore saved Xbox video flags when System Aspect Ratio returns to Dashboard after a forced mode in the same process. Keep Chihiro EEPROM untouched and use bounded little-endian accesses for the flag update.
 - Reset per-frame audio flush/fraction state and stop/reset rumble across content loads. Run Vulkan shader warmup once per renderer instance instead of once per process, so later loads honor Smooth First Play.
 - Clarify the port's process-restart limitation for machine-construction settings without rejecting content when pending options change. Hide Hardware FPU Emulation on non-x86_64 hosts, where the translator has no host-x87 path; ignore stale frontend values.
