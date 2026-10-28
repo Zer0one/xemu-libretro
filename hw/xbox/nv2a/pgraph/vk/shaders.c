@@ -1001,17 +1001,18 @@ void pgraph_vk_init_shaders(PGRAPHState *pg)
     vk_spec_emulate_int_border = !r->custom_border_color_extension_enabled;
     qemu_event_init(&r->seed_writeback_complete, false);
     r->seed_writeback_pending = false;
+    r->seed_service_done = false;
 }
 
 /* Per flip until the boot has named the game (the seeds are keyed by
  * the game's name, known at the latest a few seconds into SEGABOOT). */
-void pgraph_vk_seed_service(void)
+void pgraph_vk_seed_service(PGRAPHState *pg)
 {
-    static bool done;
-    if (done || !pgraph_seed_game_tag()) {
+    PGRAPHVkState *r = pg->vk_renderer_state;
+    if (r->seed_service_done || !pgraph_seed_game_tag()) {
         return;
     }
-    done = true;
+    r->seed_service_done = true;
     vk_seed_siblings();
 }
 

@@ -114,7 +114,6 @@ bool chihiro_is_type3(void);
 void chihiro_dimm_board_posted(const uint32_t *msg8);
 /* The byte at EEPROM 0x1F00: 1 Japan, 2 USA, 3 Export. */
 uint8_t chihiro_region_byte(void);
-extern bool chihiro_freeplay_setting;
 unsigned chihiro_dimm_factor(void);
 int chihiro_detected_game_profile(void);
 /* Set when SEGABOOT hands over to the game, cleared by a QuickReboot. */

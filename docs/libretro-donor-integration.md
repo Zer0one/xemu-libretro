@@ -1,6 +1,29 @@
 # Libretro Donor Integration
 
-## References And Scope
+## Integration Policy
+
+WizzardSK's Libretro port is the complete integration base. Import its additions
+and changes by default, then reapply or adapt this fork's improvements on the
+updated common base. A feature overlapping our implementation is a reason to
+consolidate on the donor, preserving any still-needed correction, rather than
+maintain parallel implementations. The per-player deadzone replacing our earlier
+driving-only filter is one such consolidation.
+
+Follow donor APIs, data formats and defaults, verifying the resulting behavior.
+Bring a concrete regression, compatibility conflict or necessary divergence to
+the developer for review; ordinary donor additions do not each require a new
+opt-in decision. Document accepted exceptions and keep changes modular,
+cross-platform and suitable for future pull requests. Xbox/Chihiro profiles
+share the engine and frontend base; their selection layer handles the relevant
+options, content and storage differences.
+
+Current integrated references are WizzardSK `84570ac21d` and official xemu
+`dc10b4cea9` (`0.8.138-9`). See the
+[2026-10-28 integration report](upstream-integration-20261028.md) for the latest
+changes and bounded validation. The following sections record the earlier
+integration checkpoint and its validation limits at that time.
+
+## Initial Integration References And Scope
 
 This integration merges WizzardSK/xemu-libretro's `libretro` branch through
 `252a7accfb5313523928b8b9fd2f44d2f6d9ce06` into this fork's `main`, above the

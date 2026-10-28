@@ -73,6 +73,7 @@ static bool audio_async = false;
 static bool audio_async_enabled = false;
 static bool audio_async_ready;
 static bool audio_async_needs_flush;
+static double audio_fraction;
 static retro_input_poll_t         input_poll_cb  = NULL;
 retro_input_state_t               input_state_cb = NULL; /* non-static: used by libretro-stubs.c */
 static retro_log_printf_t         log_cb       = NULL;
@@ -109,6 +110,7 @@ static unsigned declared_max_height = 1080;
 
 static bool use_vulkan = false;
 static struct retro_rumble_interface rumble;
+extern void libretro_input_reset_rumble(retro_set_rumble_state_t cb);
 /* Graphics API option: Vulkan unless set to OpenGL (read at load) */
 static bool opt_renderer_vulkan = true;
 static bool context_ready = false;
@@ -173,6 +175,14 @@ extern void glo_set_current(GloContext *context);
 /* ========================================================================= */
 
 #define XEMU_REFRESH_RATE 59.94
+
+static unsigned audio_frames_per_run(void)
+{
+    audio_fraction += 48000.0 / XEMU_REFRESH_RATE;
+    unsigned frames = (unsigned)audio_fraction;
+    audio_fraction -= frames;
+    return frames;
+}
 
 static bool emu_initialized = false;
 /* QEMU was started in this process (retro_load_game), and with which
@@ -1437,6 +1447,8 @@ static uint32_t guest_video_flags;
  * 2 16:9, 3 letterbox - so that it no longer takes the dashboard to change
  * (NNshi). In memory only: the EEPROM file keeps the dashboard's. */
 static int opt_video_aspect = 2;
+static bool dashboard_aspect_valid;
+static uint32_t dashboard_aspect_flags;
 
 extern bool smbus_storage_peek(uint32_t offset, void *buf, uint32_t len);
 extern bool smbus_storage_poke(uint32_t offset, const void *buf, uint32_t len);
@@ -1456,21 +1468,41 @@ static uint32_t eeprom_checksum(const uint8_t *data, size_t len)
 
 static void apply_video_aspect(void)
 {
-    if (emu_started_chihiro || opt_video_aspect == 0) {
+    if (emu_started_chihiro) {
         return;
     }
     uint8_t user[EEPROM_USER_SECTION_LEN];
     if (!smbus_storage_peek(EEPROM_USER_SECTION, user, sizeof(user))) {
         return;
     }
-    uint32_t *flags = (uint32_t *)(user + EEPROM_VIDEO_FLAGS - EEPROM_USER_SECTION);
-    uint32_t value = le32_to_cpu(*flags) & ~(EEPROM_VIDEO_WIDESCREEN | EEPROM_VIDEO_LETTERBOX);
+    uint8_t *flags = user + (EEPROM_VIDEO_FLAGS - EEPROM_USER_SECTION);
+    const uint32_t mask = EEPROM_VIDEO_WIDESCREEN | EEPROM_VIDEO_LETTERBOX;
+    uint32_t value = ldl_le_p(flags);
+    if (!dashboard_aspect_valid) {
+        dashboard_aspect_flags = value & mask;
+        dashboard_aspect_valid = true;
+    }
+    /* The saved EEPROM is authoritative for Dashboard, including changes
+     * made by the guest. Keep the initial value if the file is unavailable. */
+    const char *path = g_config.sys.files.eeprom_path;
+    FILE *f = path && path[0] ? qemu_fopen(path, "rb") : NULL;
+    uint32_t saved_flags;
+    if (f) {
+        if (fseek(f, EEPROM_VIDEO_FLAGS, SEEK_SET) == 0 &&
+            fread(&saved_flags, sizeof(saved_flags), 1, f) == 1) {
+            dashboard_aspect_flags = le32_to_cpu(saved_flags) & mask;
+        }
+        fclose(f);
+    }
+    value &= ~mask;
     if (opt_video_aspect == 2) {
         value |= EEPROM_VIDEO_WIDESCREEN;
     } else if (opt_video_aspect == 3) {
         value |= EEPROM_VIDEO_LETTERBOX;
+    } else if (opt_video_aspect == 0) {
+        value |= dashboard_aspect_flags;
     }
-    *flags = cpu_to_le32(value);
+    stl_le_p(flags, value);
     uint32_t sum = cpu_to_le32(eeprom_checksum(user, sizeof(user)));
     smbus_storage_poke(EEPROM_USER_SECTION, user, sizeof(user));
     smbus_storage_poke(EEPROM_USER_CHECKSUM, &sum, sizeof(sum));
@@ -2544,6 +2576,7 @@ RETRO_API bool retro_load_game(const struct retro_game_info *game)
     if (!environ_cb(RETRO_ENVIRONMENT_GET_RUMBLE_INTERFACE, &rumble)) {
         memset(&rumble, 0, sizeof(rumble));
     }
+    libretro_input_reset_rumble(rumble.set_rumble_state);
 
 
     LRLOG_INFO("[xemu] retro_load_game called\n");
@@ -2637,7 +2670,6 @@ RETRO_API bool retro_load_game(const struct retro_game_info *game)
 
     /* Read core options */
     update_variables();
-
     /* Store the DVD path (empty: no disc) */
     snprintf(opt_dvd_path, sizeof(opt_dvd_path), "%s", content);
 
@@ -2864,12 +2896,17 @@ RETRO_API bool retro_load_game(const struct retro_game_info *game)
 
     /* Populate xemu config from core options */
     populate_config(opt_dvd_path);
+    if (chihiro) {
+        LRLOG_INFO("[xemu] Chihiro Free Play for this load: %s\n",
+                   g_config.chihiro.settings.freeplay ? "enabled" : "disabled");
+    }
 
     /* Audio > Audio Thread, for this load */
     audio_async = false;
     qatomic_set(&audio_async_enabled, false);
     qatomic_set(&audio_async_ready, false);
     qatomic_set(&audio_async_needs_flush, true);
+    audio_fraction = 0.0;
     if (opt_audio_thread) {
         struct retro_audio_callback audio_callback = {
             audio_thread_callback, audio_thread_set_state
@@ -2932,6 +2969,7 @@ RETRO_API void retro_unload_game(void)
     libretro_chihiro_disc_close();
     game_loaded = false;
     emu_initialized = false;
+    libretro_input_reset_rumble(rumble.set_rumble_state);
 }
 
 static int video_debug_compare_interval(const void *a, const void *b)
@@ -3264,8 +3302,8 @@ RETRO_API void retro_run(void)
         /* Push silence for audio (the audio thread, when it has it, does
          * its own) */
         if (audio_batch_cb && !audio_async) {
-            int16_t silence[1600] = {0}; /* ~800 samples stereo */
-            audio_batch_cb(silence, 800);
+            int16_t silence[1602] = {0}; /* Up to 801 stereo frames. */
+            audio_batch_cb(silence, audio_frames_per_run());
         }
         return;
     }
@@ -3447,11 +3485,10 @@ vk_audio:
         extern int libretro_audio_pull(int16_t *out_buf, int max_frames);
         extern void libretro_audio_flush(void);
 
-        /* One-time flush: discard stale boot audio on first active pull */
-        static bool audio_flushed = false;
-        if (!audio_flushed) {
+        /* Discard boot/previous-content audio once for every load. The
+         * asynchronous path consumes the same flag when it is selected. */
+        if (qatomic_xchg(&audio_async_needs_flush, false)) {
             libretro_audio_flush();
-            audio_flushed = true;
         }
 
         /* Exactly one frame's worth a call - 48000 / 59.94, 800 or 801 -
@@ -3462,10 +3499,7 @@ vk_audio:
          * animation). The APU waits once about 64 ms is queued (apu.c), so
          * nothing has to be dropped here; a short queue is filled up with
          * silence. */
-        static double audio_frac = 0.0;
-        audio_frac += 48000.0 / XEMU_REFRESH_RATE;
-        int want = (int)audio_frac;
-        audio_frac -= want;
+        int want = audio_frames_per_run();
 
         int16_t audio_buf[1602]; /* 801 stereo frames */
         int frames = libretro_audio_pull(audio_buf, want);

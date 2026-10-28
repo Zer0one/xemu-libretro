@@ -10,6 +10,9 @@ static size_t original_count;
 
 static bool expected(const char *key)
 {
+#ifndef __x86_64__
+    if (!strcmp(key, "xemu_hard_fpu")) return false;
+#endif
     static const char *const xbox[] = {
         "xemu_memory", "xemu_network_backend", "xemu_skip_boot_anim", "xemu_avpack",
         "xemu_video_aspect", "xemu_hdd_trim",
@@ -37,7 +40,11 @@ static const struct retro_core_option_v2_definition *baseline(const char *key)
 
 static void check_count(size_t count)
 {
-    assert(count == original_count - (XEMU_LIBRETRO_PROFILE == 1 ? 4 :
+    size_t supported_count = original_count;
+#ifndef __x86_64__
+    supported_count--;
+#endif
+    assert(count == supported_count - (XEMU_LIBRETRO_PROFILE == 1 ? 4 :
                                       XEMU_LIBRETRO_PROFILE == 2 ? 6 : 0));
 }
 

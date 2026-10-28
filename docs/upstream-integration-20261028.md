@@ -15,7 +15,14 @@ shader calculation. Preserve the Libretro donor's back-face lighting when
 resolving that conflict. Standalone workflows and contributor documentation
 remain excluded; `CONTRIBUTING.md` is now listed explicitly.
 
-The Wizzard donor remains the frontend base. Preserve the shared engine,
+The Wizzard donor remains the complete Libretro base: import its updates by
+default and adapt this fork's improvements on that common base. Consolidate
+overlapping implementations on the donor, verify behavior and bring necessary
+exceptions to the developer for review. Keep portable, modular changes suitable
+for future upstream pull requests; see the ongoing
+[integration policy](libretro-donor-integration.md#integration-policy).
+
+Preserve the shared engine,
 Xbox/Chihiro profiles, native optical/DIMM loader, MAME firmware/key paths,
 macOS Vulkan sharing, Linux lifecycle, graphics corrections and MJR adaptations.
 
@@ -39,8 +46,10 @@ per-player rumble switches, gun aim and force-feedback defaults.
 Import DSP JIT/HRTF/voice-worker settings and load-time resolution scale;
 retire the shader-cache switch and keep caching enabled. Follow the donor's
 console boot/video and Vulkan fast-path defaults. Keep the dedicated arcade
-System category generic because Free Play is a runtime setting; combine all
+System category generic and combine all
 arcade and per-player controls in the same Controls category.
+Free Play is applied when content starts, including on reopening content in the
+same process; changing the selector alone does not change a running game.
 
 Import the MIT-licensed bundled Xbox dashboard HDD and disabled-by-default
 Trim HDD on Close. Never overwrite an existing HDD when automatic creation

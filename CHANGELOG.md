@@ -4,6 +4,14 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+## 0.8.138-9.1 - 2026-10-28
+
+- Restore saved Xbox video flags when System Aspect Ratio returns to Dashboard after a forced mode in the same process. Keep Chihiro EEPROM untouched and use bounded little-endian accesses for the flag update.
+- Reset per-frame audio flush/fraction state and stop/reset rumble across content loads. Run Vulkan shader warmup once per renderer instance instead of once per process, so later loads honor Smooth First Play.
+- Clarify the port's process-restart limitation for machine-construction settings without rejecting content when pending options change. Hide Hardware FPU Emulation on non-x86_64 hosts, where the translator has no host-x87 path; ignore stale frontend values.
+
+- Apply the selected Chihiro Free Play setting when content is reopened in the same RetroArch process. Read the current configuration instead of retaining the value from the first machine initialization; keep cabinet saves and unrelated EEPROM settings. Close and reopen content after changing the option.
+
 - Include the bundled dashboard and its dependencies' license notices in every future core package; keep the existing build workflows disabled.
 
 - Merge WizzardSK Libretro through `84570ac21d`: frontend-threaded audio (enabled by default after review), per-player rumble and radial deadzone, standalone DSP JIT/HRTF/voice-worker options, optional bundled Xbox dashboard HDD and opt-in HDD trimming. Replace our Chihiro-only 12% steering filter with the donor's 10% per-player filter, ignoring stale retired values. Keep Xbox disk options out of the dedicated arcade profile and preserve existing user HDDs during automatic creation.

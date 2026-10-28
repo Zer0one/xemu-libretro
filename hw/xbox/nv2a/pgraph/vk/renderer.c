@@ -204,7 +204,7 @@ static void pgraph_vk_flip_stall(NV2AState *d)
     xemu_cost_resolve_frame(d, &pgraph_vk_cost_ops,
                             d->pgraph.surface_scale_factor);
     pgraph_vk_debug_frame_terminator();
-    pgraph_vk_seed_service();
+    pgraph_vk_seed_service(&d->pgraph);
     pgraph_vk_libpump_step(&d->pgraph);
 
     /* The pipeline cache reaches disk every 600 flips (about 10 s), on a

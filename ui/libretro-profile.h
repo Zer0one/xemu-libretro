@@ -39,6 +39,12 @@ static inline bool xemu_profile_option_allowed(const char *key)
         strcmp(key, "xemu_chihiro_steering_deadzone") == 0) {
         return false;
     }
+#ifndef __x86_64__
+    /* The translator only enables its host-x87 path on x86_64. */
+    if (strcmp(key, "xemu_hard_fpu") == 0) {
+        return false;
+    }
+#endif
     if (XEMU_LIBRETRO_PROFILE == XEMU_PROFILE_XBOX &&
         strncmp(key, "xemu_chihiro_", 13) == 0) {
         return false;

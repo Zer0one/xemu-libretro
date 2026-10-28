@@ -212,6 +212,22 @@ void libretro_input_stick(unsigned port, unsigned index, int16_t *x, int16_t *y)
  * thread (libretro_input_apply_rumble). Left is the heavy motor, right the
  * light one, as standalone maps them to SDL. */
 static uint32_t libretro_rumble[4];
+static uint32_t applied_rumble[4];
+
+/* A frontend callback and its physical pads may change between loads. Stop
+ * the old output and discard both the guest request and the sent cache. */
+void libretro_input_reset_rumble(retro_set_rumble_state_t set_rumble_state);
+void libretro_input_reset_rumble(retro_set_rumble_state_t set_rumble_state)
+{
+    for (unsigned port = 0; port < 4; port++) {
+        qatomic_set(&libretro_rumble[port], 0);
+        applied_rumble[port] = 0;
+        if (set_rumble_state) {
+            set_rumble_state(port, RETRO_RUMBLE_STRONG, 0);
+            set_rumble_state(port, RETRO_RUMBLE_WEAK, 0);
+        }
+    }
+}
 
 void xemu_input_update_rumble(ControllerState *state)
 {
@@ -233,8 +249,6 @@ void libretro_input_set_rumble(unsigned port, uint16_t strong, uint16_t weak)
 
 void libretro_input_apply_rumble(retro_set_rumble_state_t set_rumble_state)
 {
-    static uint32_t applied[4];
-
     if (!set_rumble_state) {
         return;
     }
@@ -242,12 +256,12 @@ void libretro_input_apply_rumble(retro_set_rumble_state_t set_rumble_state)
         /* Controls > Rumble off: none from the Xbox pad nor a Chihiro's
          * force feedback */
         const uint32_t want = libretro_rumble_enabled[port] ? qatomic_read(&libretro_rumble[port]) : 0;
-        if (want == applied[port]) {
+        if (want == applied_rumble[port]) {
             continue;
         }
         set_rumble_state(port, RETRO_RUMBLE_STRONG, (uint16_t)(want >> 16));
         set_rumble_state(port, RETRO_RUMBLE_WEAK, (uint16_t)want);
-        applied[port] = want;
+        applied_rumble[port] = want;
     }
 }
 

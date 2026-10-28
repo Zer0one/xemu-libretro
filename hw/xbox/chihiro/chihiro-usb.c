@@ -306,7 +306,9 @@ static void chihiro_apply_freeplay(ChihiroUSBState *s)
     for (int slot = 0; slot < 2; slot++) {
         int base = slot * 0x40;
         int cfg = base + 0x1C;
-        if (chihiro_freeplay_setting) {
+        /* The Libretro frontend can reuse this machine for another load.
+         * Read the current setting, not a copy latched at machine creation. */
+        if (g_config.chihiro.settings.freeplay) {
             if (s->ic11[cfg] <= 8 || s->ic11[cfg] >= 100) {
                 memcpy(&s->ic11[cfg], freeplay_defaults, 20);
             } else {

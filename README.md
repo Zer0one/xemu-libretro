@@ -9,12 +9,12 @@ the optional combined **Xemu-Full** uses
 `xemu_full_libretro`. The dedicated profiles expose only their relevant
 options; all retain the existing `xemu_` keys. The dedicated Chihiro profile
 organizes Free Play under System and arcade controls under Controls, without
-a redundant machine category or Xbox dashboard/System Aspect Ratio settings. This separation is under
-validation. The two dedicated macOS cores are installed locally for testing;
-OutRun 2 Chihiro boot and attract have been verified. When upgrading from the runtime name `xemu`, copy
+a redundant machine category or Xbox dashboard/System Aspect Ratio settings.
+OutRun 2 and OutRun 2 Special Tours Chihiro boot and attract have been verified
+on macOS ARM64; broader gameplay and cross-platform runtime checks remain open. When upgrading from the runtime name `xemu`, copy
 the frontend's existing core configuration to the new name to retain settings.
 
-The emulator is upstream's: this repository follows [xemu-project/xemu](https://github.com/xemu-project/xemu) and adds the libretro frontend in `ui/libretro.c`. It holds the core only; upstream's standalone UI, packaging and CI are not part of it (the paths are listed in `.upstream-excluded`). The version the core reports is upstream's, with the upstream commit it is merged to (`upstream.version`). The core is currently on xemu 0.8.138-3, commit 25e1ee2fd5.
+The emulator is upstream's: this repository follows [xemu-project/xemu](https://github.com/xemu-project/xemu) and adds the libretro frontend in `ui/libretro.c`. It holds the core only; upstream's standalone UI, packaging and CI are not part of it (the paths are listed in `.upstream-excluded`). The version the core reports is upstream's, with the upstream commit it is merged to (`upstream.version`). The core is currently on xemu 0.8.138-9, commit dc10b4cea9.
 
 ## Repository References
 
@@ -32,8 +32,16 @@ The `libretro` branch preserves the original port reference; development is not
 merged into it. The separate `upstream` branch stays free of Libretro changes,
 and full official upstream merges are integrated into `main`.
 
-Libretro integration follows the donor's APIs and formats unless a documented
-exception is needed. The current donor integration is `252a7accfb`. It keeps
+WizzardSK is the complete Libretro integration base: import its updates by
+default, then adapt this fork's changes on that common base. When a donor
+implementation supersedes a local one, consolidate on the donor rather than
+keeping duplicate implementations or stacking equivalent options. Follow its
+APIs, formats and defaults; verify behavior and document any necessary exception
+for developer review. Keep shared changes small, portable and suitable for
+future pull requests to the Libretro upstream. Profile-specific differences
+belong in the existing Xbox/Chihiro selection layer.
+
+The current donor integration is `84570ac21d`. It keeps
 Xbox and Chihiro hardware in the same source base. The new
 [build profiles](docs/libretro-build-profiles.md) select Xbox and Xemu-Chihiro
 as the default artifacts, with Xemu-Full available only by explicit selection.
@@ -62,19 +70,37 @@ are currently disabled, including build, buildbot preflight and translation
 workflows. Their recipes target `main` when explicitly re-enabled; no automatic
 builds or releases are published automatically by this fork.
 
-Manual builds are available from [Releases](https://github.com/Zer0one/xemu-libretro/releases).
-**v0.8.138-3.1** preserves the Xbox-only core before further upstream and
-Chihiro integrations, with the Linux boot/lifetime and Raven OpenGL corrections.
-The macOS ARM64 package for Apple Silicon requires
-macOS 14 or later because of its bundled libraries. It includes the core,
-matching `.info` and `xemu_libretro_libs`; install the `.info` into RetroArch's
-configured core-info directory. MoltenVK, console firmware and games are not
-included. Sync is the default; Async requires a compatible patched frontend
-MoltenVK driver.
+**Current release: [v0.8.138-9.1](https://github.com/Zer0one/xemu-libretro/releases/tag/v0.8.138-9.1)**,
+based on official xemu `0.8.138-9` (`dc10b4cea9`) and WizzardSK Libretro
+`84570ac21d`. It provides separate Xbox and Chihiro cores from the same source
+base, native Chihiro optical loading and the content-reload corrections below.
+The release remains a pre-release; build success is distinct from gameplay
+validation. Packages are produced by GitHub Actions for both dedicated profiles:
 
-The published checkpoint does not include the combined Xbox/Chihiro integration
-being developed on `main`. The official xemu base remains `0.8.138-3`
-(`25e1ee2fd5`).
+| Platform | Xbox | Sega - Chihiro |
+| --- | --- | --- |
+| Windows x86_64 | [Download](https://github.com/Zer0one/xemu-libretro/releases/download/v0.8.138-9.1/xemu_libretro-windows-x86_64-v0.8.138-9.1.zip) | [Download](https://github.com/Zer0one/xemu-libretro/releases/download/v0.8.138-9.1/xemu_chihiro_libretro-windows-x86_64-v0.8.138-9.1.zip) |
+| Linux x86_64 | [Download](https://github.com/Zer0one/xemu-libretro/releases/download/v0.8.138-9.1/xemu_libretro-linux-x86_64-v0.8.138-9.1.zip) | [Download](https://github.com/Zer0one/xemu-libretro/releases/download/v0.8.138-9.1/xemu_chihiro_libretro-linux-x86_64-v0.8.138-9.1.zip) |
+| Linux aarch64 | [Download](https://github.com/Zer0one/xemu-libretro/releases/download/v0.8.138-9.1/xemu_libretro-linux-aarch64-v0.8.138-9.1.zip) | [Download](https://github.com/Zer0one/xemu-libretro/releases/download/v0.8.138-9.1/xemu_chihiro_libretro-linux-aarch64-v0.8.138-9.1.zip) |
+| macOS ARM64 | [Download](https://github.com/Zer0one/xemu-libretro/releases/download/v0.8.138-9.1/xemu_libretro-macos-arm64-v0.8.138-9.1.zip) | [Download](https://github.com/Zer0one/xemu-libretro/releases/download/v0.8.138-9.1/xemu_chihiro_libretro-macos-arm64-v0.8.138-9.1.zip) |
+| macOS x86_64 | [Download](https://github.com/Zer0one/xemu-libretro/releases/download/v0.8.138-9.1/xemu_libretro-macos-x86_64-v0.8.138-9.1.zip) | [Download](https://github.com/Zer0one/xemu-libretro/releases/download/v0.8.138-9.1/xemu_chihiro_libretro-macos-x86_64-v0.8.138-9.1.zip) |
+
+Install the matching `.info` into RetroArch's configured core-info directory and
+refresh its Core Info Cache after replacing metadata. macOS packages include
+the matching `<core>_libs` directory beside the library: ARM64 requires macOS
+14 or later with the bundled dependencies, Intel requires macOS 12.7.5 or later.
+Linux packages require glibc and include `libslirp.so.0` beside the core.
+Restart RetroArch after replacing a loaded library. See the release notes for
+source/build provenance, validation limits and checksums.
+
+MoltenVK, Microsoft/Sega firmware and games are not included. The core embeds
+the MIT-licensed xemu-dashboard HDD as the optional Xbox default; existing user
+disks are preserved. MoltenVK submission remains Sync by default; Async needs a
+compatible patched frontend driver. Xemu-Full remains opt-in and is not included
+in this release. Android is excluded until requested again.
+
+The earlier [v0.8.138-3.1 checkpoint](https://github.com/Zer0one/xemu-libretro/releases/tag/v0.8.138-3.1)
+remains available as the Xbox-only version before the Chihiro/donor integration.
 
 Release tags use `v<upstream.version>.<core revision>`. The upstream part
 identifies the integrated xemu version, including its commits-since-tag count;
@@ -92,7 +118,6 @@ fork's release package or build from `main` to use its adaptations.
 - **Linux:** `xemu_libretro.so` and `libslirp.so.0`; put both into RetroArch's `cores` folder. glibc builds, they do not load into a musl frontend.
 - **macOS:** `xemu_libretro.dylib` and the folder `xemu_libretro_libs`; put both into RetroArch's `cores` folder.
 - **Windows:** `xemu_libretro.dll`.
-- **Android:** `xemu_libretro_android.so`, Android 10 or newer.
 
 ## Setup
 
@@ -164,7 +189,9 @@ In the dedicated Chihiro core, **Aspect Ratio** controls the presented image:
 Auto uses 4:3; 16:9 stretches the 4:3 image. **System Aspect Ratio (Restart)**
 is Xbox-only and changes the dashboard video flags games read; its default is
 16:9, following the Libretro donor. **Internal Resolution Scale (Restart)**
-is applied when content starts. Shader caching is always enabled. The old core
+is applied when content starts. Returning System Aspect Ratio to Dashboard
+restores the saved EEPROM video flags. Shader caching is always enabled;
+Smooth First Play is reconsidered for each new Vulkan renderer instance. The old core
 **Display Filtering** option was unused and has been removed; choose output
 filtering in RetroArch.
 
@@ -205,6 +232,18 @@ observed in OutRun 2. Unsupported sampler LOD bias is kept at zero; devices
 that support it retain the guest's bias within the device limit.
 
 ## Controls And Audio
+
+Machine-construction settings require restarting **RetroArch itself**: Xbox
+memory/network/AV pack/boot animation, CPU Boost, x86_64 Hardware FPU Emulation,
+Voice Processor Threads and Graphics API. Values changed while a machine remains resident stay pending until that
+restart; changing them does not reject content loading. This is a limitation
+of this port's retained QEMU machine, not a general RetroArch requirement.
+Hardware FPU Emulation is hidden on other host architectures.
+
+**Free Play (Restart)** applies when Chihiro content starts. After changing it,
+close and reopen the content; restarting RetroArch also works. Disabling it
+restores coin operation even when the cabinet save previously used Free Play;
+Select inserts a coin. Existing saves do not need to be deleted.
 
 **Analog Dead Zone (Player 1/2)** uses the Libretro donor's radial stick filter,
 0–30%, default 10%, on both sticks for Xbox and Chihiro. It replaces the older

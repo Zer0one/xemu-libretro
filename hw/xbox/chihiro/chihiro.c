@@ -357,7 +357,6 @@ static void chihiro_netdimm_answer(void)
                 chihiro_netdimm_resp[0]); }
 }
 
-bool chihiro_freeplay_setting; /* ic11 byte 0x23/0x63 = freeplay in ACBU coin struct */
 /* The media board flash (2 MB): the SEGABOOT builds, read through mbrom0 and
  * mbrom1, and the MBDT header at 0xFFE00 with the board's serial. */
 static uint8_t *chihiro_flash_rom;

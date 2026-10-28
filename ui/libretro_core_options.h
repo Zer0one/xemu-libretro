@@ -70,7 +70,7 @@ struct retro_core_option_v2_category option_cats_us[] = {
     {
         "system",
         "System (Restart)",
-        "The machine itself: memory, network, boot and CPU. Taken when the content starts (Trim HDD on Close when it closes)."
+        "Memory, network, boot and CPU require restarting RetroArch. Trim HDD on Close applies when content closes."
     },
     {
         "video",
@@ -114,7 +114,7 @@ struct retro_core_option_v2_definition option_defs_us[] = {
         "xemu_network_backend",
         "Network Backend",
         NULL,
-        "Enable network support for Xbox games with LAN/System Link features. NAT backend provides basic connectivity.",
+        "Enable network support for Xbox games with LAN/System Link features. NAT backend provides basic connectivity. Restart RetroArch after changing this setting.",
         NULL,
         "system",
         {
@@ -130,7 +130,7 @@ struct retro_core_option_v2_definition option_defs_us[] = {
         "xemu_skip_boot_anim",
         "Skip Boot Animation",
         NULL,
-        "Skip the Xbox boot animation.",
+        "Skip the Xbox boot animation. Restart RetroArch after changing this setting.",
         NULL,
         "system",
         {
@@ -144,7 +144,7 @@ struct retro_core_option_v2_definition option_defs_us[] = {
         "xemu_hard_fpu",
         "Hardware FPU Emulation",
         NULL,
-        "Use host FPU for x87 emulation. Faster but may have minor inaccuracies.",
+        "Use the x86_64 host FPU for x87 emulation. Faster but may have minor inaccuracies. Restart RetroArch after changing this setting.",
         NULL,
         "system",
         {
@@ -158,7 +158,7 @@ struct retro_core_option_v2_definition option_defs_us[] = {
         "xemu_cpu_boost",
         "CPU Boost",
         NULL,
-        "Faster paths for the guest CPU and the audio processor: native SSE and a wider jump cache. Turn it off if a game misbehaves.",
+        "Faster paths for the guest CPU and the audio processor: native SSE and a wider jump cache. Turn it off if a game misbehaves. Restart RetroArch after changing this setting.",
         NULL,
         "system",
         {
@@ -292,7 +292,7 @@ struct retro_core_option_v2_definition option_defs_us[] = {
         "xemu_avpack",
         "AV Pack (Restart)",
         NULL,
-        "Select the AV pack type. Affects available video modes.",
+        "Select the AV pack type. Affects available video modes. Restart RetroArch after changing this setting.",
         NULL,
         "video",
         {
@@ -372,7 +372,7 @@ struct retro_core_option_v2_definition option_defs_us[] = {
         "xemu_vp_workers",
         "Voice Processor Threads (Restart)",
         NULL,
-        "Threads the audio voice processor mixes the voices on. Auto uses one per CPU core.",
+        "Threads the audio voice processor mixes the voices on. Auto uses one per CPU core. Restart RetroArch after changing this setting.",
         NULL,
         "audio",
         {
@@ -518,7 +518,7 @@ struct retro_core_option_v2_definition option_defs_us[] = {
         "xemu_chihiro_freeplay",
         "Free Play (Restart)",
         NULL,
-        "Starts Sega Chihiro games in free play, without coins. Off, Select inserts a coin.",
+        "Starts Sega Chihiro games in free play, without coins. Off, Select inserts a coin. Close and reopen content to apply, including when the cabinet save used Free Play.",
         NULL,
         "chihiro",
         {
@@ -695,9 +695,9 @@ static inline void libretro_filter_option_table(
       if (XEMU_LIBRETRO_PROFILE == XEMU_PROFILE_CHIHIRO &&
           !strcmp(options->categories[i].key, "system"))
       {
-         /* Free Play can change at runtime in the dedicated arcade profile. */
+         /* Keep one generic System category for the dedicated arcade profile. */
          options->categories[i].desc = "System";
-         options->categories[i].info = "CPU settings apply when content starts; Free Play can change while running.";
+         options->categories[i].info = "CPU settings require restarting RetroArch. Close and reopen content to apply Free Play.";
       }
       for (size_t j = 0; options->definitions[j].key; j++)
       {

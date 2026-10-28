@@ -65,6 +65,9 @@ int main(int argc, char **argv)
 #ifdef __APPLE__
         expected_count++; /* MoltenVK submission selector. */
 #endif
+#ifndef __x86_64__
+        expected_count--; /* Host x87 path unavailable on this architecture. */
+#endif
         options_seen = false;
         env_fn(environment);
         assert(options_seen);

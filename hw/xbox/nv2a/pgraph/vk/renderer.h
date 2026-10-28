@@ -749,6 +749,7 @@ typedef struct PGRAPHVkState {
     /* Seed learning: the learnt shader seed is written back at
      * shutdown, on the pfifo thread. */
     bool seed_writeback_pending;
+    bool seed_service_done;
     QemuEvent seed_writeback_complete;
 
     PGRAPHVkDisplayState display;
@@ -957,7 +958,7 @@ typedef enum FinishReason {
 // draw.c
 void pgraph_vk_init_pipelines(PGRAPHState *pg);
 void pgraph_vk_libpump_step(PGRAPHState *pg);
-void pgraph_vk_seed_service(void);
+void pgraph_vk_seed_service(PGRAPHState *pg);
 const ShaderState *pgraph_vk_seed_pump_states(unsigned *count);
 bool pgraph_vk_seed_spv_ready_hash(uint64_t hash);
 void pgraph_vk_finalize_pipelines(PGRAPHState *pg);

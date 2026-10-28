@@ -93,9 +93,11 @@ without being necessary to hide irrelevant options.
 | Chihiro only | `xemu_chihiro_freeplay`, `xemu_chihiro_gun_aim`, `xemu_chihiro_crosshair`, `xemu_chihiro_ffb` |
 | Common | `xemu_hard_fpu`, `xemu_cpu_boost`, `xemu_renderer`, `xemu_moltenvk_queue_submission`, `xemu_aspect_ratio`, `xemu_surface_scale`, `xemu_video_debug`, `xemu_audio_thread`, `xemu_use_dsp`, `xemu_dsp_jit`, `xemu_hrtf`, `xemu_vp_workers`, `xemu_rumble_p1`, `xemu_rumble_p2`, `xemu_deadzone_p1`, `xemu_deadzone_p2`, `xemu_smooth_first_play`, `xemu_audio_volume`, `xemu_vk_fast_paths` |
 
-The source inventory confirms each of the 29 macOS keys appears exactly once
-in this classification (25 Xbox, 23 Chihiro, 29 Full). Other platforms omit
-MoltenVK Queue Submission, leaving 24/22/28. The network option is
+The source inventory classifies all 29 potential macOS keys. x86_64 macOS
+registers 25 Xbox / 23 Chihiro / 29 Full; ARM64 macOS registers 24 / 22 / 28
+because Hardware FPU Emulation is unavailable. Other platforms omit MoltenVK
+Queue Submission, leaving 24/22/28 on x86_64 or 23/21/27 on other hosts.
+Retired/unavailable keys are filtered from both registration and reads. The network option is
 Xbox NAT/System Link, not an arcade cabinet-link control. Chihiro has fixed
 128 MiB main RAM in `system/vl.c`; DIMM size is a separate board setting.
 The console boot-animation, AV-pack and System Aspect Ratio selectors are
