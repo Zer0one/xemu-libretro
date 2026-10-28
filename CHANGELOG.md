@@ -4,6 +4,8 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- Merge official xemu through `0.8.138-9` (`dc10b4cea9`), updating VulkanMemoryAllocator to 3.5.0 and adopting color-component GLSL notation while retaining the donor's back-face lighting. Keep standalone workflows and contributor documentation excluded.
+
 - Add native Chihiro CUE/BIN, GDI, MODE1 ISO and raw optical BIN loading through the shared CHD-to-DIMM path. When MAME lookup cannot supply a working key, try image-named DATA/PIC files, ZIPs and folders beside the image, then in the profile's System `keys/` and `redump/` directories. Try all supported dumps in each named container, prefer DATA over PIC, and accept a key only after decrypted FATX/boot.id validation. Keep Xbox ISO/XISO behavior unchanged. OutRun 2 (World, Rev A) boots from its Redump CUE/BIN into introduction/attract; its full decrypted payload matches the MAME CHD reference. GDI game boot remains unverified.
 
 - Refine profile-specific Core Options: hide Xbox System Aspect Ratio in the dedicated Chihiro core and skip its EEPROM write for Chihiro content in Full. Group Chihiro Free Play under System and steering/light-gun/rumble settings under Controls; retain the separate arcade category in Full. Clarify Chihiro's output aspect ratio and remove the unused core Display Filtering selector. Ignore stale values for removed or excluded options.

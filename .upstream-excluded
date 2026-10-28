@@ -56,3 +56,4 @@ ui/xui
 xemu.entitlements
 xemu.metainfo.xml
 .gitlab-ci.d
+CONTRIBUTING.md
