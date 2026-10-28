@@ -12,12 +12,11 @@ static bool expected(const char *key)
 {
     static const char *const xbox[] = {
         "xemu_memory", "xemu_network_backend", "xemu_skip_boot_anim", "xemu_avpack",
-        "xemu_video_aspect",
+        "xemu_video_aspect", "xemu_hdd_trim",
     };
     static const char *const arcade[] = {
         "xemu_chihiro_freeplay", "xemu_chihiro_gun_aim",
         "xemu_chihiro_crosshair", "xemu_chihiro_ffb",
-        "xemu_chihiro_steering_deadzone",
     };
     for (unsigned i = 0; i < sizeof(arcade) / sizeof(arcade[0]); i++)
         if (XEMU_LIBRETRO_PROFILE == 1 && !strcmp(key, arcade[i])) return false;
@@ -38,7 +37,8 @@ static const struct retro_core_option_v2_definition *baseline(const char *key)
 
 static void check_count(size_t count)
 {
-    assert(count == original_count - (XEMU_LIBRETRO_PROFILE == 3 ? 0 : 5));
+    assert(count == original_count - (XEMU_LIBRETRO_PROFILE == 1 ? 4 :
+                                      XEMU_LIBRETRO_PROFILE == 2 ? 6 : 0));
 }
 
 static void check_v2(const struct retro_core_options_v2 *options, bool local)
@@ -54,7 +54,7 @@ static void check_v2(const struct retro_core_options_v2 *options, bool local)
             if (!strcmp(d->key, "xemu_chihiro_freeplay"))
                 assert(category && !strcmp(category, "system"));
             else if (!strncmp(d->key, "xemu_chihiro_", 13))
-                assert(category && !strcmp(category, "input"));
+                assert(category && !strcmp(category, "controls"));
         } else if (!strncmp(d->key, "xemu_chihiro_", 13)) {
             assert(category && !strcmp(category, "chihiro"));
         }
@@ -163,9 +163,9 @@ int main(void)
 {
     while (option_defs_us[original_count].key) original_count++;
 #ifdef __APPLE__
-    assert(original_count == 22);
+    assert(original_count == 29);
 #else
-    assert(original_count == 21);
+    assert(original_count == 28);
 #endif
     memcpy(original, option_defs_us, original_count * sizeof(original[0]));
     assert(xemu_profile_fixed_machine() ==
@@ -196,10 +196,14 @@ int main(void)
         assert(libretro_get_core_variable(environment, &var) ==
                (XEMU_LIBRETRO_PROFILE != 2));
     }
-    struct retro_variable retired = { "xemu_display_filtering", "old value" };
-    unsigned reads_before = variable_reads;
-    assert(!libretro_get_core_variable(environment, &retired) && !retired.value);
-    assert(variable_reads == reads_before);
+    const char *retired_keys[] = { "xemu_display_filtering", "xemu_cache_shaders",
+                                  "xemu_chihiro_steering_deadzone" };
+    for (size_t i = 0; i < sizeof(retired_keys) / sizeof(retired_keys[0]); i++) {
+        struct retro_variable retired = { retired_keys[i], "old value" };
+        unsigned reads_before = variable_reads;
+        assert(!libretro_get_core_variable(environment, &retired) && !retired.value);
+        assert(variable_reads == reads_before);
+    }
     struct retro_variable var = { "xemu_renderer", "old value" };
     assert(!libretro_get_core_variable(NULL, &var) && !var.value);
     printf("%s: %u registrations, APIs 0/1/2, all languages, defaults and stale reads OK\n",

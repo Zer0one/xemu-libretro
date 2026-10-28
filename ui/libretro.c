@@ -24,9 +24,17 @@
 #include "hw/xbox/chihiro/chihiro.h"
 #include "libretro-crosshair.h"
 #include "ui/xemu-widescreen.h"
+#include "system/blockdev.h"
+#include "system/block-backend.h"
+#include "block/block.h"
+#include "block/snapshot.h"
+#include "block/graph-lock.h"
+#include "qobject/qdict.h"
+#include <glib/gstdio.h>
 #include "ui/libretro-widescreen-titles.h"
 #include "xemu-xbe.h"
 #include "qemu/bswap.h"
+#include "data/xbox_hdd.qcow2.h"
 
 #include <epoxy/gl.h>
 #ifndef _WIN32
@@ -58,6 +66,13 @@ static retro_environment_t        environ_cb   = NULL;
 static retro_video_refresh_t      video_cb     = NULL;
 static retro_audio_sample_t       audio_cb     = NULL;
 static retro_audio_sample_batch_t audio_batch_cb = NULL;
+/* Audio > Audio Thread: taken at load; whether RetroArch then calls
+ * audio_thread_callback on its audio thread (SET_AUDIO_CALLBACK) */
+static bool opt_audio_thread = true;
+static bool audio_async = false;
+static bool audio_async_enabled = false;
+static bool audio_async_ready;
+static bool audio_async_needs_flush;
 static retro_input_poll_t         input_poll_cb  = NULL;
 retro_input_state_t               input_state_cb = NULL; /* non-static: used by libretro-stubs.c */
 static retro_log_printf_t         log_cb       = NULL;
@@ -232,11 +247,14 @@ static bool snapshot_sem_initialized = false;
 static char opt_bootrom_path[4096] = "";
 static char opt_bios_path[4096] = "";
 static char opt_hdd_path[4096] = "";
+/* Trim HDD on Close (hdd_trim) */
+static bool opt_hdd_trim = false;
+static void hdd_trim(void);
 static char opt_eeprom_path[4096] = "";
 static char opt_dvd_path[4096] = "";
 static char system_dir[4096] = "";
 static int  opt_memory_mb = XEMU_LIBRETRO_PROFILE == XEMU_PROFILE_CHIHIRO ? 128 : 64;
-static bool opt_skip_boot_anim = false;
+static bool opt_skip_boot_anim = true;
 static bool opt_hard_fpu = true;
 /* The fork's CPU boost and smooth first play (Tovarichtch/xemu), on by
  * default there */
@@ -245,15 +263,22 @@ static bool opt_smooth_first_play = true;
 static bool opt_chihiro_freeplay = true;
 /* Video > Vulkan Fast Paths: which of the renderer's fast-path features the
  * shared device may get (xemu_vk_create_device) */
-static bool opt_vk_gpl = true, opt_vk_dynamic = true;
-static int opt_chihiro_ffb = 0; /* percent, 0 = off */
+static bool opt_vk_gpl = false, opt_vk_dynamic = true;
+static int opt_chihiro_ffb = 100; /* percent, 0 = off */
 extern bool libretro_chihiro_aim_stick;   /* libretro-chihiro.c */
 extern bool libretro_chihiro_crosshair;
-extern unsigned libretro_chihiro_steering_deadzone;
 static bool opt_use_dsp = false;
 static int  opt_surface_scale = 1;
 static int  opt_avpack = CONFIG_SYS_AVPACK_HDTV;
-static bool opt_cache_shaders = true;
+/* OpenGL's shader cache, always on, as Vulkan's is (NNshi): turning it off
+ * only made the next start compile everything again */
+static const bool opt_cache_shaders = true;
+/* audio.use_dsp_jit, audio.hrtf and audio.vp.num_workers, as standalone's
+ * defaults; the JIT and HRTF are read as the audio runs, the threads when the
+ * voice processor starts */
+static bool opt_dsp_jit = false;
+static bool opt_hrtf = true;
+static int  opt_vp_workers = 0;
 static bool opt_video_debug;
 static bool reset_video_debug = true;
 static int  opt_audio_volume = 100;
@@ -1411,7 +1436,7 @@ static uint32_t guest_video_flags;
  * set in the emulated EEPROM at each start - 0 as the EEPROM has it, 1 4:3,
  * 2 16:9, 3 letterbox - so that it no longer takes the dashboard to change
  * (NNshi). In memory only: the EEPROM file keeps the dashboard's. */
-static int opt_video_aspect = 0;
+static int opt_video_aspect = 2;
 
 extern bool smbus_storage_peek(uint32_t offset, void *buf, uint32_t len);
 extern bool smbus_storage_poke(uint32_t offset, const void *buf, uint32_t len);
@@ -1542,11 +1567,6 @@ static void update_aspect(void)
     LRLOG_INFO("[xemu] Aspect ratio %s\n", widescreen ? "16:9" : "4:3");
 }
 
-static void apply_surface_scale(void *opaque)
-{
-    nv2a_set_surface_scale_factor(opt_surface_scale);
-}
-
 static void update_variables(void)
 {
     struct retro_variable var;
@@ -1578,6 +1598,10 @@ static void update_variables(void)
         LRLOG_INFO("[xemu] Video Debug Logging %s\n",
                    video_debug ? "enabled" : "disabled");
     }
+    var.key = "xemu_hdd_trim";
+    var.value = NULL;
+    opt_hdd_trim = libretro_get_core_variable(environ_cb, &var) && var.value &&
+                   !strcmp(var.value, "enabled");
 
     var.key = "xemu_video_aspect";
     var.value = NULL;
@@ -1611,9 +1635,13 @@ static void update_variables(void)
         opt_hard_fpu = !strcmp(var.value, "enabled");
     }
 
+    /* Internal Resolution Scale (Restart): taken when the content starts
+     * only. A scale above the one the frontend was told at the start made it
+     * rebuild its video context, which the core crashed in, and declaring the
+     * highest scale for everyone costs video memory nobody uses (NNshi). */
     var.key = "xemu_surface_scale";
     var.value = NULL;
-    if (libretro_get_core_variable(environ_cb, &var) && var.value) {
+    if (!emu_initialized && libretro_get_core_variable(environ_cb, &var) && var.value) {
         opt_surface_scale = atoi(var.value);
         if (opt_surface_scale < 1) opt_surface_scale = 1;
         if (opt_surface_scale > 10) opt_surface_scale = 10;
@@ -1633,12 +1661,6 @@ static void update_variables(void)
         else if (!strcmp(var.value, "svideo"))    opt_avpack = CONFIG_SYS_AVPACK_SVIDEO;
         else if (!strcmp(var.value, "scart"))     opt_avpack = CONFIG_SYS_AVPACK_SCART;
         else if (!strcmp(var.value, "vga"))       opt_avpack = CONFIG_SYS_AVPACK_VGA;
-    }
-
-    var.key = "xemu_cache_shaders";
-    var.value = NULL;
-    if (libretro_get_core_variable(environ_cb, &var) && var.value) {
-        opt_cache_shaders = !strcmp(var.value, "enabled");
     }
 
     var.key = "xemu_cpu_boost";
@@ -1672,16 +1694,6 @@ static void update_variables(void)
         libretro_chihiro_crosshair = strcmp(var.value, "disabled") != 0;
     }
 
-    var.key = "xemu_chihiro_steering_deadzone";
-    var.value = NULL;
-    libretro_chihiro_steering_deadzone = 12;
-    if (libretro_get_core_variable(environ_cb, &var) && var.value) {
-        int deadzone = atoi(var.value);
-        if (deadzone >= 0 && deadzone <= 30) {
-            libretro_chihiro_steering_deadzone = deadzone;
-        }
-    }
-
     var.key = "xemu_chihiro_ffb";
     var.value = NULL;
     if (libretro_get_core_variable(environ_cb, &var) && var.value) {
@@ -1695,6 +1707,52 @@ static void update_variables(void)
     var.value = NULL;
     if (libretro_get_core_variable(environ_cb, &var) && var.value) {
         opt_smooth_first_play = !strcmp(var.value, "enabled");
+    }
+
+    var.key = "xemu_dsp_jit";
+    var.value = NULL;
+    if (libretro_get_core_variable(environ_cb, &var) && var.value) {
+        opt_dsp_jit = !strcmp(var.value, "enabled");
+    }
+
+    var.key = "xemu_hrtf";
+    var.value = NULL;
+    if (libretro_get_core_variable(environ_cb, &var) && var.value) {
+        opt_hrtf = !strcmp(var.value, "enabled");
+    }
+
+    var.key = "xemu_vp_workers";
+    var.value = NULL;
+    if (libretro_get_core_variable(environ_cb, &var) && var.value) {
+        opt_vp_workers = atoi(var.value);
+    }
+
+    /* Controls: per player, read by the input and rumble code
+     * (libretro-stubs.c) as they run */
+    {
+        extern int libretro_deadzone_percent[4];
+        extern bool libretro_rumble_enabled[4];
+        for (unsigned p = 0; p < 2; p++) {
+            char key[32];
+            snprintf(key, sizeof(key), "xemu_rumble_p%u", p + 1);
+            var.key = key;
+            var.value = NULL;
+            if (libretro_get_core_variable(environ_cb, &var) && var.value) {
+                libretro_rumble_enabled[p] = strcmp(var.value, "disabled") != 0;
+            }
+            snprintf(key, sizeof(key), "xemu_deadzone_p%u", p + 1);
+            var.key = key;
+            var.value = NULL;
+            if (libretro_get_core_variable(environ_cb, &var) && var.value) {
+                libretro_deadzone_percent[p] = MIN(MAX(atoi(var.value), 0), 30);
+            }
+        }
+    }
+
+    var.key = "xemu_audio_thread";
+    var.value = NULL;
+    if (libretro_get_core_variable(environ_cb, &var) && var.value) {
+        opt_audio_thread = !strcmp(var.value, "enabled");
     }
 
     var.key = "xemu_audio_volume";
@@ -1713,25 +1771,9 @@ static void update_variables(void)
     /* Apply runtime-safe options */
     if (emu_initialized) {
         g_config.audio.volume_limit = opt_audio_volume / 100.0f;
-        if (g_config.display.quality.surface_scale != opt_surface_scale) {
-            /* as standalone's setting does - g_config alone was only read
-             * when the renderer started - on the emulation thread, which
-             * holds the BQL nv2a_set_surface_scale_factor expects */
-            aio_bh_schedule_oneshot(qemu_get_aio_context(),
-                                    apply_surface_scale, NULL);
-
-            /* A scale above the one the frontend sized itself for: tell
-             * it the new maximum (it sets its video up again) */
-            unsigned max_w, max_h;
-            xemu_max_geometry(opt_surface_scale, &max_w, &max_h);
-            if (max_w > declared_max_width || max_h > declared_max_height) {
-                struct retro_system_av_info av_info;
-                retro_get_system_av_info(&av_info);
-                environ_cb(RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO, &av_info);
-            }
-        }
-        g_config.perf.cache_shaders = opt_cache_shaders;
         g_config.audio.use_dsp = opt_use_dsp;
+        g_config.audio.use_dsp_jit = opt_dsp_jit;
+        g_config.audio.hrtf = opt_hrtf;
     }
 }
 
@@ -1830,6 +1872,9 @@ static void populate_config(const char *dvd_path)
     g_config.perf.optimizations = true;
     g_config.perf.real_hw_speed = false;
     g_config.audio.use_dsp = opt_use_dsp;
+    g_config.audio.use_dsp_jit = opt_dsp_jit;
+    g_config.audio.hrtf = opt_hrtf;
+    g_config.audio.vp.num_workers = opt_vp_workers;
     g_config.display.quality.surface_scale = opt_surface_scale;
     g_config.sys.avpack = opt_avpack;
 
@@ -1919,6 +1964,7 @@ static void *emu_thread_func(void *opaque)
     snprintf(machine_image, sizeof(machine_image), "%s", opt_dvd_path);
 
     emu_initialized = true;
+    qatomic_store_release(&audio_async_ready, true);
 
     extern bool runstate_is_running(void);
 
@@ -2010,12 +2056,209 @@ static void *emu_thread_func(void *opaque)
         chihiro_flush_persistent_data();
     }
 
+    if (opt_hdd_trim && !xemu_chihiro_mode()) {
+        hdd_trim();
+    }
+
     /* The main loop's GLib context goes to the next content's thread, which
      * cannot take it while this one still owns it as its default */
     g_main_context_pop_thread_default(qemu_main_context);
 
     bql_unlock();
     return NULL;
+}
+
+/* Trim HDD on Close (NNshi, Akrido): when the content closes,
+ * the cache partitions X, Y and Z are emptied - games format them again
+ * when they need them - and the image is written anew without the clusters
+ * nothing uses, so the file shrinks. Skipped while the image holds a
+ * savestate (a snapshot keeps its clusters, and copying the disk alone
+ * would drop it). The copy needs as much free space as the data for a
+ * moment. Runs on the emulator thread with the VM shut down. */
+
+#define HDD_CACHE_START 0x00080000LL           /* X, then Y and Z */
+#define HDD_CACHE_LEN   (3 * 0x2EE00000LL)     /* 750 MB each */
+#define HDD_COPY_CHUNK  (1024 * 1024)
+
+/* xemu-dashboard's pre-formatted HDD, which the core carries
+ * (data/xbox_hdd.qcow2, MIT): written where the HDD is looked for when there
+ * is none, so only the boot ROM and the BIOS have to come from the user
+ * (NNshi). The image is small and grows as games use the disk. */
+static bool write_bundled_hdd(const char *path)
+{
+    g_autofree char *dir = g_path_get_dirname(path);
+    if (g_mkdir_with_parents(dir, 0755) != 0) {
+        LRLOG_ERROR("[xemu] Cannot write the bundled HDD to %s: %s\n", path,
+                    g_strerror(errno));
+        return false;
+    }
+    /* Never replace an existing disk, including an unreadable one or a
+     * disk created between the initial probe and this call. */
+    int fd = g_open(path, O_WRONLY | O_CREAT | O_EXCL | O_BINARY, 0644);
+    if (fd < 0) {
+        LRLOG_ERROR("[xemu] Cannot create the bundled HDD at %s: %s\n", path,
+                    g_strerror(errno));
+        return false;
+    }
+    bool written = qemu_write_full(fd, xbox_hdd_data, xbox_hdd_size) ==
+                   xbox_hdd_size;
+    if (close(fd) != 0) written = false;
+    if (!written) {
+        g_remove(path);
+        LRLOG_ERROR("[xemu] Cannot finish writing the bundled HDD at %s\n", path);
+        return false;
+    }
+    LRLOG_INFO("[xemu] No HDD: wrote the bundled one (xemu-dashboard) to %s\n",
+               path);
+    return true;
+}
+
+static bool hdd_has_snapshot(BlockDriverState *bs)
+{
+    GRAPH_RDLOCK_GUARD_MAINLOOP();
+    QEMUSnapshotInfo *sn = NULL;
+    int n = bdrv_snapshot_list(bs, &sn);
+    g_free(sn);
+    return n > 0;
+}
+
+static bool hdd_is_zero(const uint8_t *buf, size_t len)
+{
+    return buf[0] == 0 && !memcmp(buf, buf + 1, len - 1);
+}
+
+/* Every chunk of blk that is not all zero, into a new qcow2 image at path */
+static bool hdd_copy_used(BlockBackend *blk, const char *path, int64_t size)
+{
+    Error *err = NULL;
+    bdrv_img_create(path, "qcow2", NULL, NULL, NULL, size, 0, true, &err);
+    if (err) {
+        LRLOG_ERROR("[xemu] Trim HDD: cannot create %s: %s\n", path, error_get_pretty(err));
+        error_free(err);
+        return false;
+    }
+    QDict *opts = qdict_new();
+    qdict_put_str(opts, "driver", "qcow2");
+    BlockBackend *out = blk_new_open(path, NULL, opts, BDRV_O_RDWR, &err);
+    if (!out) {
+        LRLOG_ERROR("[xemu] Trim HDD: cannot open %s: %s\n", path, error_get_pretty(err));
+        error_free(err);
+        return false;
+    }
+    uint8_t *buf = g_malloc(HDD_COPY_CHUNK);
+    bool ok = true;
+    for (int64_t off = 0; off < size && ok; off += HDD_COPY_CHUNK) {
+        const int64_t len = MIN(HDD_COPY_CHUNK, size - off);
+        if (blk_pread(blk, off, len, buf, 0) < 0) {
+            ok = false;
+        } else if (!hdd_is_zero(buf, len) && blk_pwrite(out, off, len, buf, 0) < 0) {
+            ok = false;
+        }
+    }
+    g_free(buf);
+    if (ok && blk_flush(out) < 0) {
+        ok = false;
+    }
+    blk_unref(out);
+    if (!ok) {
+        LRLOG_ERROR("[xemu] Trim HDD: copying the image failed (free space?), the image stays as it was\n");
+    }
+    return ok;
+}
+
+static BlockDriverState *hdd_open(const char *path, int flags)
+{
+    Error *err = NULL;
+    QDict *opts = qdict_new();
+    qdict_put_str(opts, "driver", "qcow2");
+    BlockDriverState *bs = bdrv_open(path, NULL, opts, flags, &err);
+    if (!bs) {
+        LRLOG_ERROR("[xemu] Trim HDD: cannot open %s: %s\n", path, error_get_pretty(err));
+        error_free(err);
+    }
+    return bs;
+}
+
+static void hdd_trim(void)
+{
+    const char *path = g_config.sys.files.hdd_path;
+    DriveInfo *dinfo = drive_get(IF_IDE, 0, 0);
+    BlockBackend *blk = dinfo ? blk_by_legacy_dinfo(dinfo) : NULL;
+    BlockDriverState *bs = blk ? blk_bs(blk) : NULL;
+    if (!bs || !path || !path[0]) {
+        return;
+    }
+    if (hdd_has_snapshot(bs)) {
+        LRLOG_INFO("[xemu] Trim HDD: skipped, the image holds a savestate\n");
+        return;
+    }
+    const int64_t size = blk_getlength(blk);
+    if (size < HDD_CACHE_START + HDD_CACHE_LEN) {
+        return;
+    }
+    struct stat before;
+    const bool had_size = stat(path, &before) == 0;
+
+    if (blk_pwrite_zeroes(blk, HDD_CACHE_START, HDD_CACHE_LEN, BDRV_REQ_MAY_UNMAP) < 0 ||
+        blk_flush(blk) < 0) {
+        LRLOG_ERROR("[xemu] Trim HDD: emptying X, Y and Z failed, the image stays as it was\n");
+        return;
+    }
+
+    char *tmp = g_strdup_printf("%s.trim", path);
+    char *bak = g_strdup_printf("%s.untrimmed", path);
+    if (!hdd_copy_used(blk, tmp, size)) {
+        g_remove(tmp);
+        goto out;
+    }
+
+    /* The new image in the old one's place, under the same drive */
+    const int flags = bdrv_get_flags(bs);
+    blk_remove_bs(blk);
+    bool replaced = g_rename(path, bak) == 0;
+    if (replaced && g_rename(tmp, path) != 0) {
+        g_rename(bak, path);
+        replaced = false;
+    }
+    if (!replaced) {
+        LRLOG_ERROR("[xemu] Trim HDD: cannot replace the image, the old one is kept\n");
+        g_remove(tmp);
+    }
+    BlockDriverState *nbs = hdd_open(path, flags);
+    Error *err = NULL;
+    if (!nbs || blk_insert_bs(blk, nbs, &err) < 0) {
+        if (err) {
+            LRLOG_ERROR("[xemu] Trim HDD: %s\n", error_get_pretty(err));
+            error_free(err);
+        }
+        if (nbs) {
+            bdrv_unref(nbs);
+            nbs = NULL;
+        }
+        if (replaced) {
+            /* back to the image as it was */
+            LRLOG_ERROR("[xemu] Trim HDD: the new image did not open, the old one is put back\n");
+            g_remove(path);
+            g_rename(bak, path);
+            nbs = hdd_open(path, flags);
+            if (nbs) {
+                blk_insert_bs(blk, nbs, NULL);
+            }
+        }
+    } else if (replaced) {
+        g_remove(bak);
+        struct stat after;
+        if (had_size && stat(path, &after) == 0) {
+            LRLOG_INFO("[xemu] Trim HDD: X, Y and Z emptied, the image went from %lld to %lld MB\n",
+                       (long long)(before.st_size >> 20), (long long)(after.st_size >> 20));
+        }
+    }
+    if (nbs) {
+        bdrv_unref(nbs);
+    }
+out:
+    g_free(tmp);
+    g_free(bak);
 }
 
 /* ========================================================================= */
@@ -2260,6 +2503,39 @@ static void load_message(const char *text, bool error)
 }
 
 static void load_refused(const char *text) { load_message(text, true); }
+/* Audio > Audio Thread: RetroArch's audio thread asks for the sound, and gets
+ * what the APU has mixed as it comes, at the sound card's pace as standalone
+ * plays it, so the sound keeps going while retro_run stalls (shaders being
+ * compiled). The APU still waits once about 64 ms is queued (apu.c). The
+ * ring has one reader, this thread now; retro_run leaves it alone. RetroArch
+ * stops calling while it pauses (audio_thread_set_state). */
+static void audio_thread_callback(void)
+{
+    extern int libretro_audio_pull(int16_t *out_buf, int max_frames);
+    extern void libretro_audio_flush(void);
+    int16_t buf[1024 * 2];
+
+    if (!qatomic_load_acquire(&audio_async_ready) ||
+        !qatomic_read(&audio_async_enabled) || !audio_batch_cb) {
+        g_usleep(2000);
+        return;
+    }
+    if (qatomic_xchg(&audio_async_needs_flush, false)) {
+        /* Drop stale boot audio once for each content load. */
+        libretro_audio_flush();
+    }
+    const int frames = libretro_audio_pull(buf, 1024);
+    if (frames > 0) {
+        audio_batch_cb(buf, frames);
+    } else {
+        g_usleep(1000);
+    }
+}
+
+static void audio_thread_set_state(bool enabled)
+{
+    qatomic_set(&audio_async_enabled, enabled);
+}
 
 RETRO_API bool retro_load_game(const struct retro_game_info *game)
 {
@@ -2268,6 +2544,7 @@ RETRO_API bool retro_load_game(const struct retro_game_info *game)
     if (!environ_cb(RETRO_ENVIRONMENT_GET_RUMBLE_INTERFACE, &rumble)) {
         memset(&rumble, 0, sizeof(rumble));
     }
+
 
     LRLOG_INFO("[xemu] retro_load_game called\n");
 
@@ -2468,6 +2745,9 @@ RETRO_API bool retro_load_game(const struct retro_game_info *game)
         LRLOG_INFO("[xemu] Found bios: %s\n", opt_bios_path);
 
         f = fopen(opt_hdd_path, "rb");
+        if (!f && write_bundled_hdd(opt_hdd_path)) {
+            f = fopen(opt_hdd_path, "rb");
+        }
         if (!f) {
             LRLOG_ERROR("[xemu] Xbox HDD image not found: %s\n", opt_hdd_path);
             LRLOG_ERROR("[xemu] Place xbox_hdd.qcow2 in RetroArch system/%s/ directory\n",
@@ -2585,6 +2865,20 @@ RETRO_API bool retro_load_game(const struct retro_game_info *game)
     /* Populate xemu config from core options */
     populate_config(opt_dvd_path);
 
+    /* Audio > Audio Thread, for this load */
+    audio_async = false;
+    qatomic_set(&audio_async_enabled, false);
+    qatomic_set(&audio_async_ready, false);
+    qatomic_set(&audio_async_needs_flush, true);
+    if (opt_audio_thread) {
+        struct retro_audio_callback audio_callback = {
+            audio_thread_callback, audio_thread_set_state
+        };
+        audio_async = environ_cb(RETRO_ENVIRONMENT_SET_AUDIO_CALLBACK, &audio_callback);
+        LRLOG_INFO("[xemu] Audio: %s\n", audio_async ? "on RetroArch's audio thread"
+                                                   : "a frame's worth each frame (no audio thread to be had)");
+    }
+
     /* Start emulation thread */
     emu_thread_running = true;
     emu_started_once = true;
@@ -2612,6 +2906,14 @@ RETRO_API bool retro_load_game_special(unsigned type,
 RETRO_API void retro_unload_game(void)
 {
     LRLOG_INFO("[xemu] retro_unload_game\n");
+
+    qatomic_set(&audio_async_ready, false);
+    qatomic_set(&audio_async_enabled, false);
+    if (audio_async && environ_cb) {
+        const struct retro_audio_callback callback = { NULL, NULL };
+        environ_cb(RETRO_ENVIRONMENT_SET_AUDIO_CALLBACK, (void *)&callback);
+    }
+    audio_async = false;
 
     if (emu_thread_running) {
         /* while the guest still runs: the switch needs its CPU, and the
@@ -2959,8 +3261,9 @@ RETRO_API void retro_run(void)
             video_cb(RETRO_HW_FRAME_BUFFER_VALID, 640, 480, 0);
         }
 
-        /* Push silence for audio */
-        if (audio_batch_cb) {
+        /* Push silence for audio (the audio thread, when it has it, does
+         * its own) */
+        if (audio_batch_cb && !audio_async) {
             int16_t silence[1600] = {0}; /* ~800 samples stereo */
             audio_batch_cb(silence, 800);
         }
@@ -3138,8 +3441,9 @@ RETRO_API void retro_run(void)
     }
 
 vk_audio:
-    /* Pull audio from the APU ring buffer */
-    if (audio_batch_cb) {
+    /* Pull audio from the APU ring buffer, unless RetroArch's audio thread
+     * does (audio_thread_callback) */
+    if (audio_batch_cb && !audio_async) {
         extern int libretro_audio_pull(int16_t *out_buf, int max_frames);
         extern void libretro_audio_flush(void);
 

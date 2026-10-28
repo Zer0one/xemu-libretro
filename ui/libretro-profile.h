@@ -34,7 +34,9 @@ static inline bool xemu_profile_option_allowed(const char *key)
 {
     /* Retired: this standalone UI setting has no reader in the core's
      * rendering/presentation paths. Ignore saved frontend values as well. */
-    if (!key || strcmp(key, "xemu_display_filtering") == 0) {
+    if (!key || strcmp(key, "xemu_display_filtering") == 0 ||
+        strcmp(key, "xemu_cache_shaders") == 0 ||
+        strcmp(key, "xemu_chihiro_steering_deadzone") == 0) {
         return false;
     }
     if (XEMU_LIBRETRO_PROFILE == XEMU_PROFILE_XBOX &&
@@ -45,7 +47,7 @@ static inline bool xemu_profile_option_allowed(const char *key)
         static const char *const console_options[] = {
             "xemu_memory", "xemu_network_backend", "xemu_skip_boot_anim",
             "xemu_avpack", "xemu_video_aspect", "xemu_bootrom_path", "xemu_bios_path",
-            "xemu_hdd_path", "xemu_eeprom_path",
+            "xemu_hdd_path", "xemu_eeprom_path", "xemu_hdd_trim",
         };
         for (unsigned i = 0; i < sizeof(console_options) /
                                       sizeof(console_options[0]); i++) {
@@ -64,7 +66,7 @@ static inline const char *xemu_profile_option_category(const char *key,
 {
     if (XEMU_LIBRETRO_PROFILE == XEMU_PROFILE_CHIHIRO &&
         strncmp(key, "xemu_chihiro_", 13) == 0) {
-        return strcmp(key, "xemu_chihiro_freeplay") == 0 ? "system" : "input";
+        return strcmp(key, "xemu_chihiro_freeplay") == 0 ? "system" : "controls";
     }
     return category;
 }

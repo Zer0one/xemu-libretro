@@ -40,9 +40,14 @@ static bool pad(unsigned port, unsigned id)
     return input_state_cb(port, RETRO_DEVICE_JOYPAD, 0, id) != 0;
 }
 
+/* One axis of a stick, through its player's Analog Dead Zone
+ * (libretro-stubs.c) */
 static int16_t stick(unsigned port, unsigned index, unsigned id)
 {
-    return input_state_cb(port, RETRO_DEVICE_ANALOG, index, id);
+    extern void libretro_input_stick(unsigned port, unsigned index, int16_t *x, int16_t *y);
+    int16_t x, y;
+    libretro_input_stick(port, index, &x, &y);
+    return id == RETRO_DEVICE_ID_ANALOG_X ? x : y;
 }
 
 /* A trigger's travel, 0..1; a pad without analog triggers gives all or none */
@@ -56,14 +61,12 @@ static float trigger(unsigned port, unsigned id)
     return v / 32767.0f;
 }
 
-/* Sega Chihiro > Light Gun Aim: the left stick (or D-pad) aims in place of
+/* Controls > Light Gun Aim: the left stick (or D-pad) aims in place of
  * the mouse or RetroArch's light gun, the mouse being the only way in
- * standalone (NNshi); and Sega Chihiro > Crosshair (ui/libretro.c sets
+ * standalone (NNshi); and Controls > Crosshair (ui/libretro.c sets
  * them) */
-bool libretro_chihiro_aim_stick;
+bool libretro_chihiro_aim_stick = true;
 bool libretro_chihiro_crosshair = true;
-/* Standalone's gamepad steering deadzone; independent of frontend filtering. */
-unsigned libretro_chihiro_steering_deadzone = 12;
 
 XemuLibretroCrosshair xemu_libretro_crosshairs[2];
 
@@ -104,22 +107,12 @@ static uint16_t axis_smooth(uint16_t pos, bool neg, bool posv)
 }
 
 /* A left-stick axis, or the D-pad ramping, as a JVS channel */
-static uint16_t steering(unsigned port, uint16_t *ramp, bool invert,
-                         unsigned deadzone)
+static uint16_t steering(unsigned port, uint16_t *ramp, bool invert)
 {
     int16_t x = stick(port, RETRO_DEVICE_INDEX_ANALOG_LEFT,
                       RETRO_DEVICE_ID_ANALOG_X);
     bool l = pad(port, RETRO_DEVICE_ID_JOYPAD_LEFT);
     bool r = pad(port, RETRO_DEVICE_ID_JOYPAD_RIGHT);
-
-    /* Driving callers default to standalone's 12% gamepad deadzone. A
-     * resting stick can drift with no frontend filtering, failing OutRun 2's
-     * drive-board centering check. Other profiles pass zero. Libretro gives
-     * us the already-filtered axis, so this is an additional deadzone, not
-     * MAX(frontend, core). Preserve travel outside it and digital steering. */
-    if (fabsf(x / 32767.0f) < deadzone / 100.0f) {
-        x = 0;
-    }
 
     if (invert) {
         bool t = l;
@@ -368,8 +361,7 @@ void libretro_chihiro_update_input(void)
     case CONFIG_CHIHIRO_JVS_PROFILE_CTX:
     case CONFIG_CHIHIRO_JVS_PROFILE_OR2:
     case CONFIG_CHIHIRO_JVS_PROFILE_WMMT2: {
-        uint16_t steer = steering(0, &steer_ramp, false,
-                                  libretro_chihiro_steering_deadzone);
+        uint16_t steer = steering(0, &steer_ramp, false);
 
         jvs->analog[0] = steer;
         if (chihiro_v257_global)
@@ -407,7 +399,7 @@ void libretro_chihiro_update_input(void)
     }
     case CONFIG_CHIHIRO_JVS_PROFILE_OK: {
         /* The board reads left above centre and right below it */
-        jvs->analog[1] = steering(0, &steer_ramp, true, 0);
+        jvs->analog[1] = steering(0, &steer_ramp, true);
         if (pad(0, RETRO_DEVICE_ID_JOYPAD_UP) ||
             stick(0, RETRO_DEVICE_INDEX_ANALOG_LEFT,
                   RETRO_DEVICE_ID_ANALOG_Y) < -0x4000)

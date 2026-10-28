@@ -42,16 +42,17 @@ int main(int argc, char **argv)
     const char *names[] = {"Microsoft - Xbox (OG)", "Xemu-Chihiro", "Xemu-Full"};
     const char *extensions[] = {"iso|xiso", "bin|chd|cue|gdi|iso", "iso|xiso|bin|chd|cue|gdi"};
     void *cores[3];
-    assert(argc == 5);
-    fixture_dir = argv[4];
-    for (unsigned i = 0; i < 3; i++) {
+    assert(argc == 4 || argc == 5);
+    const unsigned core_count = argc - 2;
+    fixture_dir = argv[argc - 1];
+    for (unsigned i = 0; i < core_count; i++) {
         cores[i] = dlopen(argv[i + 1], RTLD_NOW | RTLD_LOCAL);
         if (!cores[i]) fprintf(stderr, "%s\n", dlerror());
         assert(cores[i]);
     }
     /* Revisit Xbox after querying the other pinned libraries. */
-    for (unsigned pass = 0; pass < 4; pass++) {
-        unsigned i = pass % 3;
+    for (unsigned pass = 0; pass <= core_count; pass++) {
+        unsigned i = pass % core_count;
         void (*info_fn)(struct retro_system_info *) = dlsym(cores[i], "retro_get_system_info");
         void (*env_fn)(retro_environment_t) = dlsym(cores[i], "retro_set_environment");
         assert(info_fn && env_fn);
@@ -60,7 +61,7 @@ int main(int argc, char **argv)
         assert(!strcmp(info.library_name, names[i]));
         assert(!strcmp(info.valid_extensions, extensions[i]));
         assert(info.need_fullpath && info.block_extract);
-        expected_count = i == 2 ? 21 : 16;
+        expected_count = i == 2 ? 28 : i == 0 ? 24 : 22;
 #ifdef __APPLE__
         expected_count++; /* MoltenVK submission selector. */
 #endif
@@ -88,7 +89,8 @@ int main(int argc, char **argv)
         printf("%s: %zu options; %s; version %s\n", info.library_name,
                expected_count, info.valid_extensions, info.library_version);
     }
-    for (unsigned i = 0; i < 3; i++) assert(!dlclose(cores[i]));
-    puts("Metadata coexistence and 8 pre-graphics load refusals passed; no guest started.");
+    for (unsigned i = 0; i < core_count; i++) assert(!dlclose(cores[i]));
+    printf("Metadata coexistence and %u pre-graphics load refusals passed; no guest started.\n",
+           2 * (core_count + 1));
     return 0;
 }

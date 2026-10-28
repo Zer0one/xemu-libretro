@@ -69,8 +69,8 @@ extern "C" {
 struct retro_core_option_v2_category option_cats_us[] = {
     {
         "system",
-        "System",
-        "Configure machine and emulation settings."
+        "System (Restart)",
+        "The machine itself: memory, network, boot and CPU. Taken when the content starts (Trim HDD on Close when it closes)."
     },
     {
         "video",
@@ -83,18 +83,19 @@ struct retro_core_option_v2_category option_cats_us[] = {
         "Configure audio emulation settings."
     },
     {
+        "controls",
+        "Controls",
+        "Rumble and the sticks' dead zone, per player."
+    },
+    {
         "chihiro",
-        "Sega Chihiro",
+        "Sega - Chihiro",
         "The Sega Chihiro arcade games: free play, the gun games' aim and the racing games' force feedback."
     },
     { NULL, NULL, NULL },
 };
 
 struct retro_core_option_v2_definition option_defs_us[] = {
-    /* NOTE: File path options (bootrom, bios, hdd, eeprom) are not exposed
-     * as core options because they require text input which core options
-     * don't support (dropdown only). Paths are auto-detected from
-     * RetroArch's system directory instead. */
     {
         "xemu_memory",
         "System Memory (MB)",
@@ -123,6 +124,8 @@ struct retro_core_option_v2_definition option_defs_us[] = {
         },
         "disabled"
     },
+    /* On by default, unlike standalone: it breaks nothing, and the animation
+     * only holds up the game (NNshi) */
     {
         "xemu_skip_boot_anim",
         "Skip Boot Animation",
@@ -135,7 +138,7 @@ struct retro_core_option_v2_definition option_defs_us[] = {
             { "enabled",  "Enabled" },
             { NULL, NULL },
         },
-        "disabled"
+        "enabled"
     },
     {
         "xemu_hard_fpu",
@@ -153,7 +156,7 @@ struct retro_core_option_v2_definition option_defs_us[] = {
     },
     {
         "xemu_cpu_boost",
-        "CPU Boost (Restart)",
+        "CPU Boost",
         NULL,
         "Faster paths for the guest CPU and the audio processor: native SSE and a wider jump cache. Turn it off if a game misbehaves.",
         NULL,
@@ -164,6 +167,24 @@ struct retro_core_option_v2_definition option_defs_us[] = {
             { NULL, NULL },
         },
         "enabled"
+    },
+    /* NOTE: File path options (bootrom, bios, hdd, eeprom) are not exposed
+     * as core options because they require text input which core options
+     * don't support (dropdown only). Paths are auto-detected from
+     * RetroArch's system directory instead. */
+    {
+        "xemu_hdd_trim",
+        "Trim HDD on Close",
+        NULL,
+        "When the game is closed, empties the hard disk's cache partitions X, Y and Z (games format them again when they need them) and rewrites the image without unused space, so the file shrinks. Needs as much free space as the image's data for a moment. Skipped while the image holds a savestate. Done when the game closes, not at its next start.",
+        NULL,
+        "system",
+        {
+            { "disabled", NULL },
+            { "enabled",  NULL },
+            { NULL, NULL },
+        },
+        "disabled"
     },
     {
         "xemu_renderer",
@@ -196,6 +217,9 @@ struct retro_core_option_v2_definition option_defs_us[] = {
         "sync"
     },
 #endif
+    /* 16:9 by default, unlike standalone's dashboard setting: the core is for
+     * computers, whose displays are 16:9 nearly always, and no one should
+     * have to go to the dashboard first (NNshi) */
     {
         "xemu_video_aspect",
         "System Aspect Ratio (Restart)",
@@ -210,7 +234,7 @@ struct retro_core_option_v2_definition option_defs_us[] = {
             { "letterbox", "Letterbox" },
             { NULL, NULL },
         },
-        "dashboard"
+        "16:9"
     },
     {
         "xemu_aspect_ratio",
@@ -229,7 +253,7 @@ struct retro_core_option_v2_definition option_defs_us[] = {
     },
     {
         "xemu_surface_scale",
-        "Internal Resolution Scale",
+        "Internal Resolution Scale (Restart)",
         NULL,
         "Scales the internal rendering resolution. Higher values improve quality but reduce performance.",
         NULL,
@@ -266,7 +290,7 @@ struct retro_core_option_v2_definition option_defs_us[] = {
     },
     {
         "xemu_avpack",
-        "AV Pack",
+        "AV Pack (Restart)",
         NULL,
         "Select the AV pack type. Affects available video modes.",
         NULL,
@@ -280,6 +304,25 @@ struct retro_core_option_v2_definition option_defs_us[] = {
             { NULL, NULL },
         },
         "hdtv"
+    },
+    /* On by default: the sound keeps its pace while shaders compile, as
+     * standalone's own SDL thread keeps it (NNshi, OutRun 2 from a cold
+     * shader cache); fast-forward and slow motion do not change the game's
+     * speed in the core either way, and on this thread they leave the sound
+     * clean rather than garbled */
+    {
+        "xemu_audio_thread",
+        "Audio Thread (Restart)",
+        NULL,
+        "Hands the sound to RetroArch's audio thread as the APU mixes it, as standalone plays it, instead of a frame's worth each frame: the sound keeps going while frames stall, as while shaders compile.",
+        NULL,
+        "audio",
+        {
+            { "disabled", "Disabled" },
+            { "enabled",  "Enabled" },
+            { NULL, NULL },
+        },
+        "enabled"
     },
     {
         "xemu_use_dsp",
@@ -295,13 +338,29 @@ struct retro_core_option_v2_definition option_defs_us[] = {
         },
         "disabled"
     },
+    /* Defaults as standalone's (config_spec.yml: audio.use_dsp_jit,
+     * audio.hrtf, audio.vp.num_workers) */
     {
-        "xemu_cache_shaders",
-        "Shader Cache",
+        "xemu_dsp_jit",
+        "DSP JIT",
         NULL,
-        "Cache compiled GPU shaders to disk. Reduces stutter on subsequent runs.",
+        "Runs APU DSP Emulation's programs as compiled code instead of interpreting them: faster, as standalone's DSP JIT. Only does something with APU DSP Emulation on.",
         NULL,
-        "video",
+        "audio",
+        {
+            { "disabled", "Disabled" },
+            { "enabled",  "Enabled" },
+            { NULL, NULL },
+        },
+        "disabled"
+    },
+    {
+        "xemu_hrtf",
+        "HRTF",
+        NULL,
+        "Positions the 3D voices of games that use them with head-related transfer functions, as on the console, for headphones and stereo speakers.",
+        NULL,
+        "audio",
         {
             { "enabled",  "Enabled" },
             { "disabled", "Disabled" },
@@ -310,10 +369,27 @@ struct retro_core_option_v2_definition option_defs_us[] = {
         "enabled"
     },
     {
+        "xemu_vp_workers",
+        "Voice Processor Threads (Restart)",
+        NULL,
+        "Threads the audio voice processor mixes the voices on. Auto uses one per CPU core.",
+        NULL,
+        "audio",
+        {
+            { "0", "Auto" },
+            { "1", NULL },
+            { "2", NULL },
+            { "4", NULL },
+            { "8", NULL },
+            { NULL, NULL },
+        },
+        "0"
+    },
+    {
         "xemu_smooth_first_play",
         "Smooth First Play (Restart)",
         NULL,
-        "Compiles the shaders a game is known to use while it boots, so the first minutes do not stutter while they are compiled. Needs Cache Shaders on OpenGL.",
+        "Compiles the shaders a game is known to use while it boots, so the first minutes do not stutter while they are compiled. On OpenGL it keeps what it compiles in the shader cache, which is always on.",
         NULL,
         "video",
         {
@@ -341,13 +417,15 @@ struct retro_core_option_v2_definition option_defs_us[] = {
         },
         "100"
     },
-    /* All by default, as standalone's own device has them where the GPU
-     * does; fewer for a GPU that crashes on one of them (Akrido) */
+    /* No Pipeline Libraries by default, unlike standalone, which uses all:
+     * RalliSport Challenge 2 and Conker crash with them (NNshi), and the
+     * dynamic states keep most of the speed; fewer still for a GPU that
+     * crashes on one of those (Akrido) */
     {
         "xemu_vk_fast_paths",
         "Vulkan Fast Paths (Restart)",
         NULL,
-        "The Vulkan features the renderer's fast paths use: pipeline libraries (pipelines compiled in parts, on a thread) and dynamic states. All, as standalone. Fewer only to find out whether one of them crashes on a GPU.",
+        "Affects shader compilation speed on Vulkan. \"All\" is the fastest but can crash some games.",
         NULL,
         "video",
         {
@@ -357,7 +435,79 @@ struct retro_core_option_v2_definition option_defs_us[] = {
             { "none",     "None" },
             { NULL, NULL },
         },
-        "all"
+        "no_gpl"
+    },
+    {
+        "xemu_rumble_p1",
+        "Rumble (Player 1)",
+        NULL,
+        "Player 1's pad rumbles, from the Xbox games and from a Chihiro racing game's force feedback. Off, none of either.",
+        NULL,
+        "controls",
+        {
+            { "enabled",  "Enabled" },
+            { "disabled", "Disabled" },
+            { NULL, NULL },
+        },
+        "enabled"
+    },
+    {
+        "xemu_rumble_p2",
+        "Rumble (Player 2)",
+        NULL,
+        "Player 2's pad rumbles, from the Xbox games and from a Chihiro racing game's force feedback. Off, none of either.",
+        NULL,
+        "controls",
+        {
+            { "enabled",  "Enabled" },
+            { "disabled", "Disabled" },
+            { NULL, NULL },
+        },
+        "enabled"
+    },
+    /* 10% by default: a stick at rest is rarely at 0, and OutRun 2 stops
+     * at a drive board error when the wheel is not centred during its test
+     * (NNshi) */
+    {
+        "xemu_deadzone_p1",
+        "Analog Dead Zone (Player 1)",
+        NULL,
+        "How far player 1's sticks can be pushed before the game sees it, both sticks, on the Xbox and the Chihiro alike; the rest of the travel is scaled up to full.",
+        NULL,
+        "controls",
+        {
+            { "0",  "0%" },
+            { "5",  "5%" },
+            { "10", "10%" },
+            { "15", "15%" },
+            { "20", "20%" },
+            { "25", "25%" },
+            { "30", "30%" },
+            { NULL, NULL },
+        },
+        "10"
+    },
+    /* 10% by default: a stick at rest is rarely at 0, and OutRun 2 stops
+     * at a drive board error when the wheel is not centred during its test
+     * (NNshi) */
+    {
+        "xemu_deadzone_p2",
+        "Analog Dead Zone (Player 2)",
+        NULL,
+        "How far player 2's sticks can be pushed before the game sees it, both sticks, on the Xbox and the Chihiro alike; the rest of the travel is scaled up to full.",
+        NULL,
+        "controls",
+        {
+            { "0",  "0%" },
+            { "5",  "5%" },
+            { "10", "10%" },
+            { "15", "15%" },
+            { "20", "20%" },
+            { "25", "25%" },
+            { "30", "30%" },
+            { NULL, NULL },
+        },
+        "10"
     },
     /* Full retains the donor's Chihiro category. The dedicated profile maps
      * Free Play to System and the remaining arcade settings to Controls. */
@@ -378,7 +528,8 @@ struct retro_core_option_v2_definition option_defs_us[] = {
         },
         "enabled"
     },
-    /* Mouse by default, as standalone aims with the mouse */
+    /* Analog Stick by default, unlike standalone, which aims with the mouse:
+     * RetroArch is played with pads (NNshi) */
     {
         "xemu_chihiro_gun_aim",
         "Light Gun Aim",
@@ -391,7 +542,7 @@ struct retro_core_option_v2_definition option_defs_us[] = {
             { "stick", "Analog Stick" },
             { NULL, NULL },
         },
-        "mouse"
+        "stick"
     },
     /* On by default: standalone shows the mouse cursor the light gun aims
      * with; a real light gun has no use for it */
@@ -409,30 +560,8 @@ struct retro_core_option_v2_definition option_defs_us[] = {
         },
         "enabled"
     },
-    /* Standalone Chihiro gamepad steering filters 12% around center. */
-    {
-        "xemu_chihiro_steering_deadzone",
-        "Driving Steering Deadzone",
-        NULL,
-        "Additional center deadzone for the steering stick in OutRun 2, Crazy Taxi High Roller and Maximum Tune. Helps the drive-board centering check with resting-stick drift. Applied after the frontend's filtering: it can increase the effective deadzone beyond either setting alone. Does not affect pedals, D-pad steering, light guns or Ollie King. 0% disables this extra filter.",
-        NULL,
-        "chihiro",
-        {
-            { "0", "0% (Disabled)" },
-            { "2", "2%" },
-            { "5", "5%" },
-            { "8", "8%" },
-            { "10", "10%" },
-            { "12", "12%" },
-            { "15", "15%" },
-            { "20", "20%" },
-            { "25", "25%" },
-            { "30", "30%" },
-            { NULL, NULL },
-        },
-        "12"
-    },
-    /* Off by default, as standalone's force feedback */
+    /* 100% by default, unlike standalone, where it is off: the Xbox games
+     * rumble as they are anyway (NNshi) */
     {
         "xemu_chihiro_ffb",
         "Force Feedback Rumble",
@@ -450,7 +579,7 @@ struct retro_core_option_v2_definition option_defs_us[] = {
             { "200", "200%" },
             { NULL, NULL },
         },
-        "disabled"
+        "100"
     },
     { NULL, NULL, NULL, NULL, NULL, NULL, { { NULL, NULL } }, NULL },
 };
@@ -564,11 +693,11 @@ static inline void libretro_filter_option_table(
    for (size_t i = 0; options->categories[i].key; i++)
    {
       if (XEMU_LIBRETRO_PROFILE == XEMU_PROFILE_CHIHIRO &&
-          !strcmp(options->categories[i].key, "chihiro"))
+          !strcmp(options->categories[i].key, "system"))
       {
-         options->categories[i].key = "input";
-         options->categories[i].desc = "Controls";
-         options->categories[i].info = "Configure light guns, steering and force feedback.";
+         /* Free Play can change at runtime in the dedicated arcade profile. */
+         options->categories[i].desc = "System";
+         options->categories[i].info = "CPU settings apply when content starts; Free Play can change while running.";
       }
       for (size_t j = 0; options->definitions[j].key; j++)
       {

@@ -102,12 +102,13 @@ For Xbox, put these files into RetroArch's system directory, under `system/xemu/
 |---|---|
 | `mcpx_1.0.bin` | the MCPX boot ROM, 512 bytes, MD5 `d49c52a4102f6df7bcf8d0617ac475ed` |
 | `Complex_4627v1.03.bin` | the flash BIOS, a 1 MB or 256 KB image |
-| `xbox_hdd.qcow2` | the hard disk, for example [xemu's ready-made image](https://github.com/xemu-project/xemu-hdd-image/releases) |
+| `xbox_hdd.qcow2` | optional existing Xbox HDD; the core creates its bundled xemu-dashboard image when absent |
 
-The boot ROM and the BIOS are Microsoft's and have to be dumped from your own console; see xemu's [required files](https://xemu.app/docs/required-files/). Other names and locations can be set in the core options. The EEPROM (`xbox_eeprom.bin`) is created in the same folder when it is missing.
+The boot ROM and the BIOS are Microsoft's and have to be dumped from your own console; see xemu's [required files](https://xemu.app/docs/required-files/). The EEPROM (`xbox_eeprom.bin`) is created in the same folder when it is missing.
 
 Resolve RetroArch's configured **System/BIOS** directory before copying these
-files; installing the core alone does not install its firmware or HDD.
+files; installing the core alone does not install Microsoft firmware. A missing
+Xbox HDD is created from the bundled MIT-licensed [xemu-dashboard](https://github.com/xemu-project/xemu-dashboard) image. An existing disk is never replaced.
 **System Memory (MB)** defaults to the retail Xbox's **64 MB**. OutRun 2 and Halo
 booted at 64 MB with the 4627 BIOS used in Linux validation; that BIOS does not
 establish a requirement for 128 MB. Increasing memory is not a boot-failure fix.
@@ -161,7 +162,9 @@ snapshots from before this integration are not guaranteed to load correctly.
 
 In the dedicated Chihiro core, **Aspect Ratio** controls the presented image:
 Auto uses 4:3; 16:9 stretches the 4:3 image. **System Aspect Ratio (Restart)**
-is Xbox-only and changes the dashboard video flags games read. The old core
+is Xbox-only and changes the dashboard video flags games read; its default is
+16:9, following the Libretro donor. **Internal Resolution Scale (Restart)**
+is applied when content starts. Shader caching is always enabled. The old core
 **Display Filtering** option was unused and has been removed; choose output
 filtering in RetroArch.
 
@@ -201,14 +204,31 @@ are reproduced in the shader. This removes the grey horizon/building overlay
 observed in OutRun 2. Unsupported sampler LOD bias is kept at zero; devices
 that support it retain the guest's bias within the device limit.
 
-For Chihiro driving games, **Driving Steering Deadzone** adds a selectable
-0–30% center filter (12% by default, matching the donor's gamepad behavior).
-It prevents resting-stick drift from failing OutRun 2's drive-board centering
-check. This filter runs after RetroArch's processing, so the effective
-physical deadzone can exceed either setting alone; it is not their maximum.
-Pedals, digital steering, light guns and Ollie King are unaffected.
-See [Drive-Board Centering](docs/chihiro-drive-centering.md) for reproduction
-and validation.
+## Controls And Audio
+
+**Analog Dead Zone (Player 1/2)** uses the Libretro donor's radial stick filter,
+0–30%, default 10%, on both sticks for Xbox and Chihiro. It replaces the older
+Chihiro-only 12% steering filter; stale values of that old option are ignored.
+The remaining travel is rescaled. This runs after RetroArch's own filtering,
+so the effective physical deadzone can exceed either value. Digital steering
+and pedals retain their mappings. **Rumble (Player 1/2)** can disable all rumble
+for that pad; Chihiro force-feedback rumble defaults to 100% and light-gun aim
+to Analog Stick, following the donor. See
+[Drive-Board Centering](docs/chihiro-drive-centering.md) for the original reproduction.
+
+**Audio Thread (Restart)** is enabled by default, following the Libretro donor
+with the developer's approval. When the frontend accepts it, its audio thread
+pulls APU samples independently of `retro_run`, including during shader stalls.
+Disabling it, or using a frontend that rejects the callback, retains exactly
+one frame's worth of audio per `retro_run`. The APU queue remains capped at
+about 64 ms. DSP JIT (disabled), HRTF (enabled) and Voice Processor Threads
+(Auto) follow standalone defaults. These settings are shared by both profiles.
+
+Xbox/Full also expose **Trim HDD on Close**, disabled by default. It clears the
+Xbox cache partitions X/Y/Z and rewrites the disk to reclaim space after shutdown;
+internal snapshots prevent trimming. It requires temporary free space and can
+lengthen content close. It does not apply to Chihiro or automatically run on an
+existing user disk.
 
 ## Video Debug Logging
 

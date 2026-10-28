@@ -82,20 +82,20 @@ units retain both implementation paths.
 
 ## Options And Defaults
 
-The current English table contains 22 options on macOS (21 elsewhere). Preserve existing raw `xemu_*`
+The current English table contains 29 options on macOS (28 elsewhere). Preserve existing raw `xemu_*`
 keys initially; separate library identities give frontend core configuration
 its own scope. A second option namespace would multiply donor merge changes
 without being necessary to hide irrelevant options.
 
 | Eligibility | Current Keys |
 | --- | --- |
-| Xbox only | `xemu_memory`, `xemu_network_backend`, `xemu_skip_boot_anim`, `xemu_avpack`, `xemu_video_aspect` |
-| Chihiro only | `xemu_chihiro_freeplay`, `xemu_chihiro_gun_aim`, `xemu_chihiro_crosshair`, `xemu_chihiro_ffb`, `xemu_chihiro_steering_deadzone` |
-| Common | `xemu_hard_fpu`, `xemu_cpu_boost`, `xemu_renderer`, `xemu_moltenvk_queue_submission`, `xemu_aspect_ratio`, `xemu_surface_scale`, `xemu_video_debug`, `xemu_use_dsp`, `xemu_cache_shaders`, `xemu_smooth_first_play`, `xemu_audio_volume`, `xemu_vk_fast_paths` |
+| Xbox only | `xemu_memory`, `xemu_network_backend`, `xemu_skip_boot_anim`, `xemu_avpack`, `xemu_video_aspect`, `xemu_hdd_trim` |
+| Chihiro only | `xemu_chihiro_freeplay`, `xemu_chihiro_gun_aim`, `xemu_chihiro_crosshair`, `xemu_chihiro_ffb` |
+| Common | `xemu_hard_fpu`, `xemu_cpu_boost`, `xemu_renderer`, `xemu_moltenvk_queue_submission`, `xemu_aspect_ratio`, `xemu_surface_scale`, `xemu_video_debug`, `xemu_audio_thread`, `xemu_use_dsp`, `xemu_dsp_jit`, `xemu_hrtf`, `xemu_vp_workers`, `xemu_rumble_p1`, `xemu_rumble_p2`, `xemu_deadzone_p1`, `xemu_deadzone_p2`, `xemu_smooth_first_play`, `xemu_audio_volume`, `xemu_vk_fast_paths` |
 
-The source inventory confirms each of the 22 macOS keys appears exactly once
-in this classification (17 Xbox, 17 Chihiro, 22 Full). Other platforms omit
-MoltenVK Queue Submission, leaving 16/16/21. The network option is
+The source inventory confirms each of the 29 macOS keys appears exactly once
+in this classification (25 Xbox, 23 Chihiro, 29 Full). Other platforms omit
+MoltenVK Queue Submission, leaving 24/22/28. The network option is
 Xbox NAT/System Link, not an arcade cabinet-link control. Chihiro has fixed
 128 MiB main RAM in `system/vl.c`; DIMM size is a separate board setting.
 The console boot-animation, AV-pack and System Aspect Ratio selectors are
@@ -109,7 +109,10 @@ rumble settings under Controls. Full retains the donor's Chihiro category.
 `xemu_display_filtering` was removed: it only assigned a standalone display
 setting with no consumer in the Libretro renderer/presentation paths. Old
 saved values are ignored in all profiles. Frontend filtering/shaders remain
-the frontend's settings. Keep the donor's existing internal arcade defaults.
+the frontend's settings. The donor's radial per-player deadzone (10%) replaces the old driving-only
+12% filter. Ignore its retired key and `xemu_cache_shaders`; shader caching
+is always enabled. Threaded audio follows the donor by explicit developer
+approval; the per-frame path remains the frontend-rejection/disabled fallback.
 
 Filter both registration and reads: a stale frontend variable must not change
 an option unavailable in the selected profile. Remove empty categories.

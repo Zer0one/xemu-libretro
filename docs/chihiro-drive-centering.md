@@ -1,4 +1,21 @@
-# Chihiro Driving Steering Deadzone
+# Chihiro Drive-Board Centering
+
+## Current Behavior
+
+The 2026-10-28 WizzardSK merge (`84570ac21d`) replaces our earlier
+**Driving Steering Deadzone** with the donor's **Analog Dead Zone (Player 1/2)**.
+The developer selected the donor implementation: a radial 0–30% filter,
+default 10%, on both sticks, with the remaining travel rescaled. It applies
+to both Xbox and Chihiro, including arcade aiming/board controls, not only
+racing games. Pedals and digital steering retain their mappings. The old
+`xemu_chihiro_steering_deadzone` option is removed and stale values are ignored;
+there is only one core filter, after RetroArch's own filtering.
+
+The evidence below records the original 12% fix and is historical; it does not
+claim fresh runtime validation of the donor's 10% filter. The updated native
+steering test exercises the donor filter together with the JVS mapper.
+
+## Original Reproduction And Fix
 
 OutRun 2 can stop at `Drive board : Centering error` if the steering input
 moves off center while the drive board initializes. The original Libretro
@@ -7,7 +24,7 @@ rested exactly at center and did not expose gamepad drift.
 
 The integrated standalone donor's `ui/xemu-input.c`,
 `chihiro_axis_travel()` (reference commit `bad4d18933`), filters gamepad axis
-travel below 12%. The Libretro adapter now provides the same default center
+travel below 12%. The earlier Libretro adapter provided the same default center
 threshold through **Driving Steering Deadzone**
 (`xemu_chihiro_steering_deadzone`). Values are 0, 2, 5, 8, 10, 12, 15, 20, 25
 and 30 percent; 0 disables the additional filter. It can be changed while
@@ -59,7 +76,7 @@ it is not a physical-controller travel/rumble certification or a new full
 playthrough. The physical controller was not enumerated by the standalone
 SDL read probe in this session.
 
-`scripts/test-libretro-chihiro-steering.py` checks 1,310,720 actual mapper
+The original `scripts/test-libretro-chihiro-steering.py` checked 1,310,720 actual mapper
 results across all 10 settings, both orientations and every signed 16-bit
 axis value, plus digital steering, boundary and endpoint behavior, under
 ASan/UBSan. Profile registration checks cover APIs 0/1/2 and translated and
