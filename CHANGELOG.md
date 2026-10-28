@@ -4,6 +4,8 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- Include the bundled dashboard and its dependencies' license notices in every future core package; keep the existing build workflows disabled.
+
 - Merge WizzardSK Libretro through `84570ac21d`: frontend-threaded audio (enabled by default after review), per-player rumble and radial deadzone, standalone DSP JIT/HRTF/voice-worker options, optional bundled Xbox dashboard HDD and opt-in HDD trimming. Replace our Chihiro-only 12% steering filter with the donor's 10% per-player filter, ignoring stale retired values. Keep Xbox disk options out of the dedicated arcade profile and preserve existing user HDDs during automatic creation.
 - Follow the donor's load-time Internal Resolution Scale and always-on shader cache. Adopt its Skip Boot Animation, 16:9 console video setting, Analog Stick gun aim, 100% arcade force feedback and No Pipeline Libraries defaults. Preserve macOS MoltenVK Sync as the default and the two dedicated core identities. Reset/unregister asynchronous audio state across content loads and register only after successful validation.
 

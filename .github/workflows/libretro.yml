@@ -130,6 +130,7 @@ jobs:
           cp build/${{ env.CORE_STEM }}.dll dist/
           cp build/${{ env.CORE_STEM }}.info dist/
           cp -R licenses dist/
+          cp data/xbox_hdd-LICENSE.txt dist/licenses/xemu-dashboard.license.txt
           ${CROSSPREFIX}strip --strip-unneeded dist/${{ env.CORE_STEM }}.dll
           ls -la dist
           # What it needs at load time: Windows' own DLLs and nothing else.
@@ -196,6 +197,7 @@ jobs:
           cp build/${{ env.CORE_STEM }}.so dist/
           cp build/${{ env.CORE_STEM }}.info dist/
           cp -R licenses dist/
+          cp data/xbox_hdd-LICENSE.txt dist/licenses/xemu-dashboard.license.txt
           # the unstripped core too, for profiling and crash backtraces
           mkdir -p symbols
           cp build/${{ env.CORE_STEM }}.so symbols/
@@ -303,6 +305,7 @@ jobs:
           cp build/${{ env.CORE_STEM }}.so dist/${{ env.CORE_STEM }}_android.so
           cp build/${{ env.CORE_STEM }}.info dist/
           cp -R licenses dist/
+          cp data/xbox_hdd-LICENSE.txt dist/licenses/xemu-dashboard.license.txt
           $NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip --strip-unneeded dist/${{ env.CORE_STEM }}_android.so
           ls -la dist
           $NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf -d dist/${{ env.CORE_STEM }}_android.so | grep NEEDED
@@ -371,6 +374,7 @@ jobs:
           cp build/${{ env.CORE_STEM }}.dylib dist/${{ env.CORE_STEM }}.dylib
           cp build/${{ env.CORE_STEM }}.info dist/
           cp -R licenses dist/
+          cp data/xbox_hdd-LICENSE.txt dist/licenses/xemu-dashboard.license.txt
           strip -x dist/${{ env.CORE_STEM }}.dylib
           # The MacPorts libraries (glib, pixman, epoxy, ...) go along in a
           # folder of their own next to the core, as upstream bundles them
