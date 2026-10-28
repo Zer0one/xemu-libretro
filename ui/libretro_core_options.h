@@ -19,6 +19,7 @@
 #include <string.h>
 
 #include "libretro.h"
+#include "libretro-profile.h"
 
 #ifndef HAVE_NO_LANGEXTRA
 #include "libretro_core_options_intl.h"
@@ -69,7 +70,7 @@ struct retro_core_option_v2_category option_cats_us[] = {
     {
         "system",
         "System",
-        "Configure system-level settings such as BIOS paths, memory, and boot options."
+        "Configure machine and emulation settings."
     },
     {
         "video",
@@ -326,7 +327,7 @@ struct retro_core_option_v2_definition option_defs_us[] = {
         "xemu_audio_volume",
         "Audio Volume Limit (%)",
         NULL,
-        "Limit Xbox audio output volume independently from RetroArch master volume.",
+        "Limit emulated audio output volume independently from RetroArch master volume.",
         NULL,
         "audio",
         {
@@ -339,20 +340,6 @@ struct retro_core_option_v2_definition option_defs_us[] = {
             { NULL, NULL },
         },
         "100"
-    },
-    {
-        "xemu_display_filtering",
-        "Display Filtering",
-        NULL,
-        "Texture filtering mode for the display output.",
-        NULL,
-        "video",
-        {
-            { "linear",  "Bilinear" },
-            { "nearest", "Nearest Neighbor" },
-            { NULL, NULL },
-        },
-        "linear"
     },
     /* All by default, as standalone's own device has them where the GPU
      * does; fewer for a GPU that crashes on one of them (Akrido) */
@@ -372,8 +359,8 @@ struct retro_core_option_v2_definition option_defs_us[] = {
         },
         "all"
     },
-    /* The Chihiro's options last: their category goes last (RetroArch lists
-     * the categories in the order their first options come) */
+    /* Full retains the donor's Chihiro category. The dedicated profile maps
+     * Free Play to System and the remaining arcade settings to Controls. */
     /* On by default, unlike standalone: a cabinet at home has no coins to
      * put in, and NNshi asked for it to start that way (Select still
      * inserts a coin when it is off) */
@@ -421,6 +408,29 @@ struct retro_core_option_v2_definition option_defs_us[] = {
             { NULL, NULL },
         },
         "enabled"
+    },
+    /* Standalone Chihiro gamepad steering filters 12% around center. */
+    {
+        "xemu_chihiro_steering_deadzone",
+        "Driving Steering Deadzone",
+        NULL,
+        "Additional center deadzone for the steering stick in OutRun 2, Crazy Taxi High Roller and Maximum Tune. Helps the drive-board centering check with resting-stick drift. Applied after the frontend's filtering: it can increase the effective deadzone beyond either setting alone. Does not affect pedals, D-pad steering, light guns or Ollie King. 0% disables this extra filter.",
+        NULL,
+        "chihiro",
+        {
+            { "0", "0% (Disabled)" },
+            { "2", "2%" },
+            { "5", "5%" },
+            { "8", "8%" },
+            { "10", "10%" },
+            { "12", "12%" },
+            { "15", "15%" },
+            { "20", "20%" },
+            { "25", "25%" },
+            { "30", "30%" },
+            { NULL, NULL },
+        },
+        "12"
     },
     /* Off by default, as standalone's force feedback */
     {
@@ -511,6 +521,92 @@ struct retro_core_options_v2 *options_intl[RETRO_LANGUAGE_LAST] = {
  *   be as painless as possible for core devs)
  */
 
+/* Compact the donor's tables once, before any API conversion. The profile
+ * is fixed for this library's lifetime; no translated source is rewritten.
+ * A translated key absent from English is obsolete and must not reappear. */
+static inline bool libretro_option_has_english_key(const char *key)
+{
+   for (size_t i = 0; option_defs_us[i].key; i++)
+      if (!strcmp(option_defs_us[i].key, key))
+         return true;
+   return false;
+}
+
+static inline void libretro_filter_option_table(
+      struct retro_core_options_v2 *options, bool translated)
+{
+   size_t out = 0;
+   for (size_t i = 0; options->definitions[i].key; i++)
+   {
+      const char *key = options->definitions[i].key;
+      if (xemu_profile_option_allowed(key) &&
+          (!translated || libretro_option_has_english_key(key)))
+      {
+         struct retro_core_option_v2_definition *def = &options->definitions[out++];
+         *def = options->definitions[i];
+         def->category_key = xemu_profile_option_category(key, def->category_key);
+         if (XEMU_LIBRETRO_PROFILE == XEMU_PROFILE_CHIHIRO &&
+             !strcmp(key, "xemu_aspect_ratio"))
+         {
+            /* Runtime English fallback; generated translations stay intact. */
+            def->desc = "Aspect Ratio";
+            def->desc_categorized = NULL;
+            def->info = "The shape of the image sent to the frontend. Auto uses 4:3 for Chihiro. 16:9 stretches the 4:3 image; it does not enable widescreen rendering in the game.";
+            def->info_categorized = NULL;
+         }
+      }
+   }
+   memset(&options->definitions[out], 0, sizeof(options->definitions[out]));
+
+   if (!options->categories)
+      return;
+   out = 0;
+   for (size_t i = 0; options->categories[i].key; i++)
+   {
+      if (XEMU_LIBRETRO_PROFILE == XEMU_PROFILE_CHIHIRO &&
+          !strcmp(options->categories[i].key, "chihiro"))
+      {
+         options->categories[i].key = "input";
+         options->categories[i].desc = "Controls";
+         options->categories[i].info = "Configure light guns, steering and force feedback.";
+      }
+      for (size_t j = 0; options->definitions[j].key; j++)
+      {
+         const char *category = options->definitions[j].category_key;
+         if (category && !strcmp(category, options->categories[i].key))
+         {
+            options->categories[out++] = options->categories[i];
+            break;
+         }
+      }
+   }
+   memset(&options->categories[out], 0, sizeof(options->categories[out]));
+}
+
+static inline void libretro_prepare_core_options(void)
+{
+   static bool prepared;
+   if (prepared)
+      return;
+   libretro_filter_option_table(&options_us, false);
+#ifndef HAVE_NO_LANGEXTRA
+   for (size_t i = 0; i < RETRO_LANGUAGE_LAST; i++)
+      if (options_intl[i] && options_intl[i] != &options_us)
+         libretro_filter_option_table(options_intl[i], true);
+#endif
+   prepared = true;
+}
+
+/* Also filter reads: a stale variable in the frontend must not activate
+ * a setting that this profile does not register. */
+static inline bool libretro_get_core_variable(retro_environment_t environ_cb,
+      struct retro_variable *var)
+{
+   var->value = NULL;
+   return xemu_profile_option_allowed(var->key) && environ_cb &&
+          environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, var);
+}
+
 static inline void libretro_set_core_options(retro_environment_t environ_cb,
       bool *categories_supported)
 {
@@ -522,6 +618,7 @@ static inline void libretro_set_core_options(retro_environment_t environ_cb,
    if (!environ_cb || !categories_supported)
       return;
 
+   libretro_prepare_core_options();
    *categories_supported = false;
 
    if (!environ_cb(RETRO_ENVIRONMENT_GET_CORE_OPTIONS_VERSION, &version))

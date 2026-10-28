@@ -1,8 +1,7 @@
 name: Build libretro core
 
-# The core, built with -Dlibretro=true: xemu_libretro.dll for Windows,
-# cross-compiled in the MXE toolchain image upstream xemu uses for its Windows
-# releases, and xemu_libretro.so for Linux x86_64 and aarch64.
+# The profiles use -Dlibretro=true and -Dlibretro_system=xbox|chihiro|full.
+# Windows uses the upstream MXE toolchain; Linux targets x86_64 and aarch64.
 # Disabled in this fork's GitHub Actions settings; explicit approval is needed
 # before re-enabling or dispatching it. Development builds target main.
 
@@ -13,6 +12,11 @@ on:
         description: 'Platforms to build (linux, windows, macos), or all; Android requires explicit selection and renewed developer approval'
         type: string
         default: linux,windows,macos
+      profile_set:
+        description: 'Core profiles (dedicated = Xbox and Chihiro; Full is opt-in)'
+        type: choice
+        options: [dedicated, xbox, chihiro, full]
+        default: dedicated
   push:
     branches: [main]
 
@@ -23,7 +27,11 @@ on:
 jobs:
   windows-x86_64:
     if: github.ref == 'refs/heads/main' && (github.event_name != 'workflow_dispatch' || inputs.platforms == 'all' || contains(inputs.platforms, 'windows'))
-    name: Windows x86_64
+    name: Windows x86_64 ${{ matrix.profile }}
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: ${{ fromJSON(inputs.profile_set == 'full' && '["full"]' || inputs.profile_set == 'xbox' && '["xbox"]' || inputs.profile_set == 'chihiro' && '["chihiro"]' || '["xbox","chihiro"]') }}
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/xemu-project/xemu-win64-toolchain-gcc:sha-18018f1
@@ -31,6 +39,7 @@ jobs:
       run:
         shell: bash
     env:
+      CORE_STEM: ${{ matrix.profile == 'xbox' && 'xemu_libretro' || matrix.profile == 'chihiro' && 'xemu_chihiro_libretro' || 'xemu_full_libretro' }}
       CROSSPREFIX: x86_64-w64-mingw32.static-
       CROSSAR: x86_64-w64-mingw32.static-gcc-ar
     steps:
@@ -108,36 +117,40 @@ jobs:
             --extra-ldflags="-L/opt/glslang/lib" \
             --target-list=i386-softmmu \
             --cross-prefix=$CROSSPREFIX --static \
-            -Dlibretro=true
+            -Dlibretro=true -Dlibretro_system=${{ matrix.profile }}
         env:
           AR: ${{ env.CROSSAR }}
 
       - name: Build
-        run: ninja -C build xemu_libretro.dll 2>&1 | tail -200
+        run: ninja -C build ${{ env.CORE_STEM }}.dll 2>&1 | tail -200
 
       - name: Collect
         run: |
           mkdir -p dist
-          cp build/xemu_libretro.dll dist/
-          cp ui/xemu_libretro.info dist/
-          ${CROSSPREFIX}strip --strip-unneeded dist/xemu_libretro.dll
+          cp build/${{ env.CORE_STEM }}.dll dist/
+          cp build/${{ env.CORE_STEM }}.info dist/
+          cp -R licenses dist/
+          ${CROSSPREFIX}strip --strip-unneeded dist/${{ env.CORE_STEM }}.dll
           ls -la dist
           # What it needs at load time: Windows' own DLLs and nothing else.
-          ${CROSSPREFIX}objdump -p dist/xemu_libretro.dll | grep 'DLL Name' | sort -u
+          ${CROSSPREFIX}objdump -p dist/${{ env.CORE_STEM }}.dll | grep 'DLL Name' | sort -u
 
       - uses: actions/upload-artifact@v4
         with:
-          name: xemu_libretro-windows-x86_64
-          path: dist/xemu_libretro.dll
+          name: ${{ env.CORE_STEM }}-windows-x86_64
+          path: dist/
 
   linux:
     if: github.ref == 'refs/heads/main' && (github.event_name != 'workflow_dispatch' || inputs.platforms == 'all' || contains(inputs.platforms, 'linux'))
-    name: Linux ${{ matrix.arch }}
+    name: Linux ${{ matrix.arch }} ${{ matrix.profile }}
     runs-on: ubuntu-24.04${{ matrix.arch == 'aarch64' && '-arm' || '' }}
     strategy:
       fail-fast: false
       matrix:
+        profile: ${{ fromJSON(inputs.profile_set == 'full' && '["full"]' || inputs.profile_set == 'xbox' && '["xbox"]' || inputs.profile_set == 'chihiro' && '["chihiro"]' || '["xbox","chihiro"]') }}
         arch: [x86_64, aarch64]
+    env:
+      CORE_STEM: ${{ matrix.profile == 'xbox' && 'xemu_libretro' || matrix.profile == 'chihiro' && 'xemu_chihiro_libretro' || 'xemu_full_libretro' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -166,13 +179,13 @@ jobs:
           ./configure \
             --extra-cflags="-DXBOX=1 -Wno-error" \
             --target-list=i386-softmmu \
-            -Dlibretro=true -Dpipewire=disabled \
+            -Dlibretro=true -Dlibretro_system=${{ matrix.profile }} -Dpipewire=disabled \
             -Db_staticpic=true
         env:
           LIBRARY_PATH: /usr/lib/${{ matrix.arch }}-linux-gnu
 
       - name: Build
-        run: ninja -C build xemu_libretro.so 2>&1 | tail -200
+        run: ninja -C build ${{ env.CORE_STEM }}.so 2>&1 | tail -200
 
       # libslirp is not in every frontend's runtime (Flatpak
       # RetroArch's, for one), so it goes next to the core, found through
@@ -180,28 +193,29 @@ jobs:
       - name: Collect
         run: |
           mkdir -p dist
-          cp build/xemu_libretro.so dist/
-          cp ui/xemu_libretro.info dist/
+          cp build/${{ env.CORE_STEM }}.so dist/
+          cp build/${{ env.CORE_STEM }}.info dist/
+          cp -R licenses dist/
           # the unstripped core too, for profiling and crash backtraces
           mkdir -p symbols
-          cp build/xemu_libretro.so symbols/
-          patchelf --set-rpath '$ORIGIN' symbols/xemu_libretro.so
-          strip --strip-unneeded dist/xemu_libretro.so
-          patchelf --set-rpath '$ORIGIN' dist/xemu_libretro.so
+          cp build/${{ env.CORE_STEM }}.so symbols/
+          patchelf --set-rpath '$ORIGIN' symbols/${{ env.CORE_STEM }}.so
+          strip --strip-unneeded dist/${{ env.CORE_STEM }}.so
+          patchelf --set-rpath '$ORIGIN' dist/${{ env.CORE_STEM }}.so
           for lib in libslirp.so.0; do
             cp -L "/usr/lib/${{ matrix.arch }}-linux-gnu/$lib" dist/
           done
           ls -la dist
-          readelf -d dist/xemu_libretro.so | grep -E 'NEEDED|RUNPATH'
+          readelf -d dist/${{ env.CORE_STEM }}.so | grep -E 'NEEDED|RUNPATH'
 
       - uses: actions/upload-artifact@v4
         with:
-          name: xemu_libretro-linux-${{ matrix.arch }}
+          name: ${{ env.CORE_STEM }}-linux-${{ matrix.arch }}
           path: dist/
 
       - uses: actions/upload-artifact@v4
         with:
-          name: xemu_libretro-linux-${{ matrix.arch }}-symbols
+          name: ${{ env.CORE_STEM }}-linux-${{ matrix.arch }}-symbols
           path: symbols/
 
   # After X-OG Mobile's recipe (Ashnar2602/X-OG_Mobile): glib, pixman and
@@ -210,11 +224,13 @@ jobs:
   # Vulkan, through the frontend's context.
   android:
     if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && contains(inputs.platforms, 'android')
-    name: Android ${{ matrix.abi }}
+    name: Android ${{ matrix.abi }} ${{ matrix.profile }}
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
+        profile: ${{ fromJSON(inputs.profile_set == 'full' && '["full"]' || inputs.profile_set == 'xbox' && '["xbox"]' || inputs.profile_set == 'chihiro' && '["chihiro"]' || '["xbox","chihiro"]') }}
+        abi: [arm64-v8a, x86_64]
         include:
           - abi: arm64-v8a
             triplet: arm64-android
@@ -224,6 +240,8 @@ jobs:
             triplet: x64-android
             cpu: x86_64
             clang: x86_64-linux-android29
+    env:
+      CORE_STEM: ${{ matrix.profile == 'xbox' && 'xemu_libretro' || matrix.profile == 'chihiro' && 'xemu_chihiro_libretro' || 'xemu_full_libretro' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -270,27 +288,28 @@ jobs:
             --disable-sndio --audio-drv-list= \
             --extra-cflags="-DXBOX=1 -Wno-error" \
             --extra-ldflags="-L$PREFIX/lib" \
-            -Dlibretro=true -Db_staticpic=true
+            -Dlibretro=true -Dlibretro_system=${{ matrix.profile }} -Db_staticpic=true
 
       # Every error of the run, which a tail of the output cuts off
       - name: Build
         run: |
-          ninja -k 0 -C build xemu_libretro.so > ninja.log 2>&1 && exit 0
+          ninja -k 0 -C build ${{ env.CORE_STEM }}.so > ninja.log 2>&1 && exit 0
           grep -E -B2 -A8 "error:|FAILED:" ninja.log | head -600
           exit 1
 
       - name: Collect
         run: |
           mkdir -p dist
-          cp build/xemu_libretro.so dist/xemu_libretro_android.so
-          cp ui/xemu_libretro.info dist/
-          $NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip --strip-unneeded dist/xemu_libretro_android.so
+          cp build/${{ env.CORE_STEM }}.so dist/${{ env.CORE_STEM }}_android.so
+          cp build/${{ env.CORE_STEM }}.info dist/
+          cp -R licenses dist/
+          $NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip --strip-unneeded dist/${{ env.CORE_STEM }}_android.so
           ls -la dist
-          $NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf -d dist/xemu_libretro_android.so | grep NEEDED
+          $NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf -d dist/${{ env.CORE_STEM }}_android.so | grep NEEDED
 
       - uses: actions/upload-artifact@v4
         with:
-          name: xemu_libretro-android-${{ matrix.abi }}
+          name: ${{ env.CORE_STEM }}-android-${{ matrix.abi }}
           path: dist/
 
   # As upstream's macOS build (build.sh): the libraries from MacPorts through
@@ -298,13 +317,15 @@ jobs:
   # versions upstream targets
   macos:
     if: github.ref == 'refs/heads/main' && (github.event_name != 'workflow_dispatch' || inputs.platforms == 'all' || contains(inputs.platforms, 'macos'))
-    name: macOS ${{ matrix.arch }}
+    name: macOS ${{ matrix.arch }} ${{ matrix.profile }}
     runs-on: macos-15
     strategy:
       fail-fast: false
       matrix:
+        profile: ${{ fromJSON(inputs.profile_set == 'full' && '["full"]' || inputs.profile_set == 'xbox' && '["xbox"]' || inputs.profile_set == 'chihiro' && '["chihiro"]' || '["xbox","chihiro"]') }}
         arch: [arm64, x86_64]
     env:
+      CORE_STEM: ${{ matrix.profile == 'xbox' && 'xemu_libretro' || matrix.profile == 'chihiro' && 'xemu_chihiro_libretro' || 'xemu_full_libretro' }}
       HOMEBREW_NO_AUTO_UPDATE: 1
     steps:
       - uses: actions/checkout@v4
@@ -336,29 +357,30 @@ jobs:
             --extra-cflags="-DXBOX=1 -Wno-error $CFLAGS" \
             --extra-ldflags="-headerpad_max_install_names" \
             --target-list=i386-softmmu --disable-cocoa --cross-prefix= \
-            -Dlibretro=true -Db_staticpic=true
+            -Dlibretro=true -Dlibretro_system=${{ matrix.profile }} -Db_staticpic=true
 
       - name: Build
         run: |
-          ninja -k 0 -C build xemu_libretro.dylib > ninja.log 2>&1 && exit 0
+          ninja -k 0 -C build ${{ env.CORE_STEM }}.dylib > ninja.log 2>&1 && exit 0
           grep -E -B2 -A8 "error:|FAILED:" ninja.log | head -600
           exit 1
 
       - name: Collect
         run: |
           mkdir -p dist
-          cp build/xemu_libretro.dylib dist/xemu_libretro.dylib
-          cp ui/xemu_libretro.info dist/
-          strip -x dist/xemu_libretro.dylib
+          cp build/${{ env.CORE_STEM }}.dylib dist/${{ env.CORE_STEM }}.dylib
+          cp build/${{ env.CORE_STEM }}.info dist/
+          cp -R licenses dist/
+          strip -x dist/${{ env.CORE_STEM }}.dylib
           # The MacPorts libraries (glib, pixman, epoxy, ...) go along in a
           # folder of their own next to the core, as upstream bundles them
           # into its app. Their install names are under /opt/local/lib, where
           # nothing is on the runner: they are taken from macos-libs and
           # pointed at that folder, and so are their own dependencies.
           src=$PWD/macos-libs/${{ matrix.arch }}/opt/local/lib
-          libs=dist/xemu_libretro_libs
+          libs=dist/${{ env.CORE_STEM }}_libs
           mkdir -p $libs
-          todo=dist/xemu_libretro.dylib
+          todo=dist/${{ env.CORE_STEM }}.dylib
           while [ -n "$todo" ]; do
             next=""
             for f in $todo; do
@@ -370,8 +392,8 @@ jobs:
                   install_name_tool -id "@loader_path/$name" "$libs/$name"
                   next="$next $libs/$name"
                 fi
-                if [ "$f" = dist/xemu_libretro.dylib ]; then
-                  install_name_tool -change "$dep" "@loader_path/xemu_libretro_libs/$name" "$f"
+                if [ "$f" = dist/${{ env.CORE_STEM }}.dylib ]; then
+                  install_name_tool -change "$dep" "@loader_path/${{ env.CORE_STEM }}_libs/$name" "$f"
                 else
                   install_name_tool -change "$dep" "@loader_path/$name" "$f"
                 fi
@@ -380,11 +402,11 @@ jobs:
             todo=$next
           done
           ls $libs
-          codesign -f -s - $libs/*.dylib dist/xemu_libretro.dylib
-          otool -L dist/xemu_libretro.dylib
-          lipo -info dist/xemu_libretro.dylib
+          codesign -f -s - $libs/*.dylib dist/${{ env.CORE_STEM }}.dylib
+          otool -L dist/${{ env.CORE_STEM }}.dylib
+          lipo -info dist/${{ env.CORE_STEM }}.dylib
 
       - uses: actions/upload-artifact@v4
         with:
-          name: xemu_libretro-macos-${{ matrix.arch }}
+          name: ${{ env.CORE_STEM }}-macos-${{ matrix.arch }}
           path: dist/

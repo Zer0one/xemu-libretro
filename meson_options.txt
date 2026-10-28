@@ -392,6 +392,8 @@ option('x86_version', type : 'combo', choices : ['0', '1', '2', '3', '4'], value
 
 option('libretro', type: 'boolean', value: false,
        description: 'Build as a libretro core DLL instead of standalone executable')
+option('libretro_system', type: 'combo', choices: ['xbox', 'chihiro', 'full'],
+       value: 'xbox', description: 'Libretro machine profile (Full is opt-in)')
 
 option('rust', type: 'feature', value: 'disabled',
        description: 'Rust support')

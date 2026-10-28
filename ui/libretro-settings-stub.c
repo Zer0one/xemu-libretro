@@ -13,6 +13,8 @@
 
 #include "xemu-config.h"
 #include "xemu-settings.h"
+#include "libretro-profile.h"
+#include "libretro-media.h"
 
 struct config g_config;
 
@@ -96,24 +98,7 @@ void xemu_settings_reset_keyboard_mapping(void)
  * loaded content (sys.files.dvd_path). */
 bool xemu_media_is_xbox_disc(const char *path)
 {
-    static const char magic[] = "MICROSOFT*XBOX*MEDIA";
-    static const long partitions[] = { 0, 0x18300000 };
-    if (!path || !path[0] || g_file_test(path, G_FILE_TEST_IS_DIR)) {
-        return false;
-    }
-    FILE *f = fopen(path, "rb");
-    if (!f) {
-        return false;
-    }
-    bool disc = false;
-    for (int i = 0; i < 2 && !disc; i++) {
-        char buf[sizeof(magic) - 1];
-        disc = fseek(f, partitions[i] + 0x10000, SEEK_SET) == 0 &&
-               fread(buf, 1, sizeof(buf), f) == sizeof(buf) &&
-               memcmp(buf, magic, sizeof(buf)) == 0;
-    }
-    fclose(f);
-    return disc;
+    return xemu_libretro_probe_media(path) == XEMU_MEDIA_XBOX_DISC;
 }
 
 static int chihiro_mode_asked = -1;
@@ -148,6 +133,10 @@ const char *xemu_chihiro_image(void)
 
 bool xemu_chihiro_mode(void)
 {
+    const int fixed_machine = xemu_profile_fixed_machine();
+    if (fixed_machine >= 0) {
+        return fixed_machine;
+    }
     if (chihiro_mode < 0) {
         const char *image = xemu_chihiro_image();
         if (chihiro_mode_asked >= 0) {

@@ -2,9 +2,16 @@
 
 A [libretro](https://www.libretro.com/) core of [xemu](https://xemu.app) for Xbox and Sega Chihiro, for RetroArch and other libretro frontends.
 
-Frontends display this core as **Microsoft - Xbox (OG)**. The core filename is
-still `xemu_libretro`, support files stay in `system/xemu/`, and option keys
-retain the `xemu_` prefix. When upgrading from the runtime name `xemu`, copy
+The Xbox build is displayed as **Microsoft - Xbox (OG)**, with filename
+`xemu_libretro` and data in `system/xemu/`. **Sega - Chihiro** uses
+`xemu_chihiro_libretro`, with internal core name **Xemu-Chihiro**;
+the optional combined **Xemu-Full** uses
+`xemu_full_libretro`. The dedicated profiles expose only their relevant
+options; all retain the existing `xemu_` keys. The dedicated Chihiro profile
+organizes Free Play under System and arcade controls under Controls, without
+a redundant machine category or Xbox dashboard/System Aspect Ratio settings. This separation is under
+validation. The two dedicated macOS cores are installed locally for testing;
+OutRun 2 Chihiro boot and attract have been verified. When upgrading from the runtime name `xemu`, copy
 the frontend's existing core configuration to the new name to retain settings.
 
 The emulator is upstream's: this repository follows [xemu-project/xemu](https://github.com/xemu-project/xemu) and adds the libretro frontend in `ui/libretro.c`. It holds the core only; upstream's standalone UI, packaging and CI are not part of it (the paths are listed in `.upstream-excluded`). The version the core reports is upstream's, with the upstream commit it is merged to (`upstream.version`). The core is currently on xemu 0.8.138-3, commit 25e1ee2fd5.
@@ -27,13 +34,18 @@ and full official upstream merges are integrated into `main`.
 
 Libretro integration follows the donor's APIs and formats unless a documented
 exception is needed. The current donor integration is `252a7accfb`. It keeps
-Xbox and Chihiro in one core; the earlier
-[separation assessment](docs/chihiro-integration-plan.md) is preserved as deferred
+Xbox and Chihiro hardware in the same source base. The new
+[build profiles](docs/libretro-build-profiles.md) select Xbox and Xemu-Chihiro
+as the default artifacts, with Xemu-Full available only by explicit selection.
+Build selection, option filtering and content admission are implemented;
+Xbox and Chihiro/Vulkan have reached OutRun 2 attract; broader arcade lifecycle
+and cross-platform validation remain pending. The earlier
+[separation assessment](docs/chihiro-integration-plan.md) remains historical
 research. The official xemu revision and the Libretro donor revision are tracked
 separately.
 
 See [Libretro Donor Integration](docs/libretro-donor-integration.md) for retained
-adaptations, validation results and the pending Chihiro media requirement.
+adaptations and validation results; current Chihiro media support is described below.
 
 The two additional remotes provide references for separately reviewed
 adaptations. The official upstream remains the emulator base. Their fetch
@@ -104,20 +116,54 @@ establish a requirement for 128 MB. Increasing memory is not a boot-failure fix.
 
 Xbox games as `.iso` or `.xiso` (xemu's XISO format, as made by extract-xiso).
 
-Chihiro uses FATX netboot `.bin` images and board firmware under
-`system/xemu/Chihiro/`: `chihiro_xbox_bios.bin`, `fpr21042_m29w160et.bin`,
+Chihiro uses FATX netboot `.bin` images or supported optical `.chd`, `.cue`/BIN,
+`.gdi`, MODE1 `.iso` and raw MODE1 `.bin` files,
+with matching security ZIPs or loose `.data` / `.pic` dumps beside the CHD,
+beside its containing directory, or under `system/xemu-chihiro/keys/`.
+MAME CHD/set associations and SHA-1 lookup support renamed dumps; a name-based
+fallback warns if its key SHA-1 is unverified. If the MAME route cannot supply
+a working key, image-name lookup searches beside the image, in
+`system/xemu-chihiro/keys/`, then `system/xemu-chihiro/redump/`: use a matching
+`<image-name>.data` / `.pic`, or a matching ZIP/folder containing DATA/PIC dumps
+with arbitrary member names. Candidates must decrypt a valid FATX/`boot.id`;
+a generic ISO signature alone does not identify a Chihiro game. Firmware belongs under
+`system/xemu-chihiro/` or its `Chihiro/` subfolder (legacy fallback:
+`system/xemu/Chihiro/`):
+`chihiro_xbox_bios.bin`, `fpr21042_m29w160et.bin`,
 `ic10_g24lc64.bin`, `ic11_24lc024.bin` and `pc20_g24lc64.bin`.
-Linked cabinets additionally use `ver1305.bin`. The core selects the machine
-from the content, following the donor. Xbox-patched Chihiro discs are Xbox
-content. Switching between Xbox and Chihiro requires restarting RetroArch.
-Chihiro game boot has not yet been verified in this fork: the available test
-media are Xbox-patched discs, not netboot images.
+Linked cabinets additionally use `ver1305.bin`. The standard MAME `chihiro.zip`
+and `seganetw.zip` sets may be placed under the profile's System root;
+`seganetw.zip` supplies the network firmware.
+Mutable `chihiro_eeprom.bin`, saves and snapshots remain outside the archive.
+Firmware may also be read from
+associated game ZIPs/folders or MAME `chihiro` / `seganetw` sets beside the
+content or its containing folder; System sources take precedence. ZIP firmware
+uses a hash-addressed cache under the profile's System root. Dedicated cores fix their
+machine at build time; Full selects it from content. Xbox-patched Chihiro
+discs remain Xbox content. Switching machine types inside Full still requires
+restarting RetroArch. Full writes under `system/xemu-full/`; its Xbox HDD is
+separate and is not automatically copied from the existing Xbox installation.
+OutRun 2 has booted directly from its MAME CHD in RetroArch/Vulkan and reached
+its introduction and attract scenes. The native loader decrypts directly into
+DIMM; no converted game image or runtime Python/chdman is needed. See
+[Direct Chihiro Media](docs/chihiro-direct-media.md) for key lookup, supported
+track layouts, the shared title catalogue, uniform DIMM detection and validation
+limits. OutRun 2 (World, Rev A) also boots from its Redump CUE/BIN set into
+introduction/attract. GDI has synthetic reader/encrypted FATX coverage only.
+Select the CUE with its referenced BIN files extracted together; game ZIPs
+are storage archives, while the core reads ZIP containers only for keys/firmware.
 
 Shader-cache formats follow the donor; device-specific shader variants remain
 distinct. Save states remain experimental and unsupported in core metadata;
 snapshots from before this integration are not guaranteed to load correctly.
 
 ## Video
+
+In the dedicated Chihiro core, **Aspect Ratio** controls the presented image:
+Auto uses 4:3; 16:9 stretches the 4:3 image. **System Aspect Ratio (Restart)**
+is Xbox-only and changes the dashboard video flags games read. The old core
+**Display Filtering** option was unused and has been removed; choose output
+filtering in RetroArch.
 
 Select **Graphics API (Restart)** in Core Options and use RetroArch's matching `glcore` or `vulkan` video driver. Vulkan is the default; Android uses Vulkan only. macOS supports Vulkan through MoltenVK as well as OpenGL. The Metal path converts unsupported primitives on the CPU and uses hardware depth interpolation, which approximates NV2A depth behavior. Vulkan uses a dedicated renderer queue when available and hands frames to the frontend through GPU semaphores. See [Vulkan Integration And Validation](docs/libretro-vulkan.md) for driver selection, sources, evidence and remaining limits.
 
@@ -155,6 +201,15 @@ are reproduced in the shader. This removes the grey horizon/building overlay
 observed in OutRun 2. Unsupported sampler LOD bias is kept at zero; devices
 that support it retain the guest's bias within the device limit.
 
+For Chihiro driving games, **Driving Steering Deadzone** adds a selectable
+0–30% center filter (12% by default, matching the donor's gamepad behavior).
+It prevents resting-stick drift from failing OutRun 2's drive-board centering
+check. This filter runs after RetroArch's processing, so the effective
+physical deadzone can exceed either setting alone; it is not their maximum.
+Pedals, digital steering, light guns and Ollie King are unaffected.
+See [Drive-Board Centering](docs/chihiro-drive-centering.md) for reproduction
+and validation.
+
 ## Video Debug Logging
 
 **Video Debug Logging** under Core Options → Video writes the standalone's
@@ -176,10 +231,21 @@ Linux, with upstream's build dependencies installed:
 ```
 git clone --branch main https://github.com/Zer0one/xemu-libretro.git
 cd xemu-libretro
-./configure --extra-cflags="-DXBOX=1 -Wno-error" --target-list=i386-softmmu \
-    -Dlibretro=true -Dpipewire=disabled -Db_staticpic=true
-ninja -C build xemu_libretro.so
+python3 scripts/build-libretro-profiles.py -- \
+    --extra-cflags="-DXBOX=1 -Wno-error" --target-list=i386-softmmu \
+    -Dpipewire=disabled -Db_staticpic=true
 ```
+
+This builds Xbox and Chihiro in `build/profiles/xbox/` and
+`build/profiles/chihiro/`. Use `--profiles full` before `--` to build Full
+explicitly, or select one dedicated profile. Platform dependencies and
+compiler flags remain the same as for the previous combined core.
+For a manual single build, pass `-Dlibretro=true -Dlibretro_system=xbox`,
+`chihiro` or `full` to `configure`; omission selects Xbox.
+Use the matching generated `.info` in the build directory. The source
+`ui/xemu_libretro.info` is the donor metadata input, not a split-core package.
+The local builder does not bundle runtime libraries; packaging remains
+platform-specific, as shown in the CI recipes.
 
 The disabled CI workflow `.github/workflows/libretro.yml` contains the build
 recipes and dependencies for Windows, Linux, Android and macOS.

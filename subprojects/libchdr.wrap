@@ -1,0 +1,7 @@
+# Pinned upstream including header-file-size fix 798a4f72 and later checks.
+[wrap-file]
+directory = libchdr-47d794151b2b64f6aba60304e6480f4f5a2bc24b
+source_url = https://codeload.github.com/rtissera/libchdr/tar.gz/47d794151b2b64f6aba60304e6480f4f5a2bc24b
+source_filename = libchdr-47d794151b2b64f6aba60304e6480f4f5a2bc24b.tar.gz
+source_hash = ee1131e748a2c7d7559b7054540ebe49637433901f92071560df52e369f7c7af
+patch_directory = libchdr

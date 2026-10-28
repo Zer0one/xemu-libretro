@@ -37,6 +37,7 @@ imgui
 implot
 genconfig
 curl-*
+libchdr-*
 nlohmann_json
 sdl3
 /dsp56300/*

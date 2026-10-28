@@ -144,6 +144,8 @@ void chihiro_save_init(void);
 /* Writes the saves now, for the UI's quick exit, which skips the exit
  * notifiers. */
 void chihiro_flush_save_now(void);
+/* Persistence only; caller holds the BQL with guest execution stopped. */
+void chihiro_flush_persistent_data(void);
 
 typedef struct ChihiroFilePart {
     const void *data;

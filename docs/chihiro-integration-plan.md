@@ -1,10 +1,15 @@
 # Xbox and Chihiro Core Separation
 
+Current work: the developer reopened separation on 2026-10-27 using the fully
+integrated current base. See [Build Profiles](libretro-build-profiles.md) for
+Xbox, Xemu-Chihiro and optional Xemu-Full. The selective-import proposals
+below remain historical and must not be used to remove integrated features.
+
 Status: historical dependency assessment completed on 2026-10-26, preserved
 before integration. The developer subsequently chose a full donor merge with
-Xbox and Chihiro in one core. Separation is deferred; the proposed profiles
-and selective import below are research, not the active integration plan.
-No split binaries have been built. The assessment's original source baseline
+Xbox and Chihiro in one core. At that historical checkpoint separation was deferred; the proposed profiles
+and selective import below were research, not the active integration plan.
+No split binaries had been built at that time. The assessment's original source baseline
 and dependency findings are retained below.
 
 ## References

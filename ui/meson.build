@@ -23,11 +23,20 @@ subdir('thirdparty')
 xemu_ss = ss.source_set()
 xemu_ss.add(files(
   'libretro.c',
+  'libretro-media.c',
+  'libretro-chihiro-disc.c',
+  'libretro-chihiro-firmware.c',
   'libretro-chihiro.c',
   'libretro-settings-stub.c',
   'libretro-stubs.c',
   'xemu-widescreen.c',
 ))
+if get_option('libretro_system') != 'xbox'
+  chdr_project = subproject('libchdr')
+  xemu_ss.add(chdr_project.get_variable('chdr_dep'))
+  xemu_ss.add(files('libretro-chihiro-chd.c', 'libretro-chihiro-keys.c',
+                    'libretro-chihiro-key-search.c', 'libretro-chihiro-optical.c'))
+endif
 xemu_ss.add(when: slirp, if_true: files('xemu-net.c'), if_false: files('xemu-net-stub.c'))
 if host_os == 'android'
   xemu_ss.add(files('libretro-gl-stubs.c'))

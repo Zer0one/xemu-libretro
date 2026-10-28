@@ -43,6 +43,10 @@
 #include "libretro_vulkan.h"
 #include "hw/xbox/nv2a/pgraph/vk/libretro_shared.h"
 #include "libretro_core_options.h"
+#include "libretro-media.h"
+#include "libretro-chihiro-disc.h"
+#include "libretro-chihiro-firmware.h"
+static XemuChihiroFirmware chihiro_firmware;
 #include "xemu-settings.h"
 #include "xemu-version.h"
 
@@ -231,7 +235,7 @@ static char opt_hdd_path[4096] = "";
 static char opt_eeprom_path[4096] = "";
 static char opt_dvd_path[4096] = "";
 static char system_dir[4096] = "";
-static int  opt_memory_mb = 64;
+static int  opt_memory_mb = XEMU_LIBRETRO_PROFILE == XEMU_PROFILE_CHIHIRO ? 128 : 64;
 static bool opt_skip_boot_anim = false;
 static bool opt_hard_fpu = true;
 /* The fork's CPU boost and smooth first play (Tovarichtch/xemu), on by
@@ -245,13 +249,13 @@ static bool opt_vk_gpl = true, opt_vk_dynamic = true;
 static int opt_chihiro_ffb = 0; /* percent, 0 = off */
 extern bool libretro_chihiro_aim_stick;   /* libretro-chihiro.c */
 extern bool libretro_chihiro_crosshair;
+extern unsigned libretro_chihiro_steering_deadzone;
 static bool opt_use_dsp = false;
 static int  opt_surface_scale = 1;
 static int  opt_avpack = CONFIG_SYS_AVPACK_HDTV;
 static bool opt_cache_shaders = true;
 static bool opt_video_debug;
 static bool reset_video_debug = true;
-static int  opt_filtering = CONFIG_DISPLAY_FILTERING_LINEAR;
 static int  opt_audio_volume = 100;
 static int  opt_network_backend = 0; /* 0=disabled, 1=nat */
 
@@ -811,7 +815,7 @@ static VkInstance xemu_vk_create_instance(
             // alone does not establish Async compatibility for this provider.
             struct retro_variable var = {"xemu_moltenvk_queue_submission", NULL};
             VkBool32 synchronous = VK_TRUE;
-            if (environ_cb && environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) &&
+            if (libretro_get_core_variable(environ_cb, &var) &&
                 var.value && !strcmp(var.value, "async")) {
                 synchronous = VK_FALSE;
             }
@@ -1378,7 +1382,7 @@ static void context_destroy(void)
 static void get_option_string(const char *key, char *buf, size_t buf_sz)
 {
     struct retro_variable var = { key, NULL };
-    if (environ_cb && environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
+    if (libretro_get_core_variable(environ_cb, &var) && var.value) {
         snprintf(buf, buf_sz, "%s", var.value);
     }
 }
@@ -1403,7 +1407,7 @@ static uint32_t guest_video_flags;
 #define EEPROM_USER_SECTION 0x64
 #define EEPROM_USER_SECTION_LEN 0x5C
 
-/* System Aspect Ratio: what the dashboard's video settings say to the game,
+/* Xbox-only System Aspect Ratio: what the dashboard's video settings say to the game,
  * set in the emulated EEPROM at each start - 0 as the EEPROM has it, 1 4:3,
  * 2 16:9, 3 letterbox - so that it no longer takes the dashboard to change
  * (NNshi). In memory only: the EEPROM file keeps the dashboard's. */
@@ -1427,7 +1431,7 @@ static uint32_t eeprom_checksum(const uint8_t *data, size_t len)
 
 static void apply_video_aspect(void)
 {
-    if (opt_video_aspect == 0) {
+    if (emu_started_chihiro || opt_video_aspect == 0) {
         return;
     }
     uint8_t user[EEPROM_USER_SECTION_LEN];
@@ -1554,20 +1558,19 @@ static void update_variables(void)
 
     var.key = "xemu_renderer";
     var.value = NULL;
-    if (environ_cb && environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
+    if (libretro_get_core_variable(environ_cb, &var) && var.value) {
         opt_renderer_vulkan = strcmp(var.value, "opengl") != 0;
     }
 
     var.key = "xemu_aspect_ratio";
     var.value = NULL;
-    if (environ_cb && environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
+    if (libretro_get_core_variable(environ_cb, &var) && var.value) {
         opt_aspect = !strcmp(var.value, "4:3") ? 1 : !strcmp(var.value, "16:9") ? 2 : 0;
     }
 
     var.key = "xemu_video_debug";
     var.value = NULL;
-    bool video_debug = environ_cb &&
-        environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value &&
+    bool video_debug = libretro_get_core_variable(environ_cb, &var) && var.value &&
         !strcmp(var.value, "enabled");
     if (video_debug != opt_video_debug) {
         opt_video_debug = video_debug;
@@ -1578,39 +1581,39 @@ static void update_variables(void)
 
     var.key = "xemu_video_aspect";
     var.value = NULL;
-    if (environ_cb && environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
+    if (libretro_get_core_variable(environ_cb, &var) && var.value) {
         opt_video_aspect = !strcmp(var.value, "4:3") ? 1 : !strcmp(var.value, "16:9") ? 2 :
                            !strcmp(var.value, "letterbox") ? 3 : 0;
     }
 
     var.key = "xemu_memory";
     var.value = NULL;
-    if (environ_cb && environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
+    if (libretro_get_core_variable(environ_cb, &var) && var.value) {
         opt_memory_mb = atoi(var.value);
     }
 
     var.key = "xemu_skip_boot_anim";
     var.value = NULL;
-    if (environ_cb && environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
+    if (libretro_get_core_variable(environ_cb, &var) && var.value) {
         opt_skip_boot_anim = !strcmp(var.value, "enabled");
     }
 
     var.key = "xemu_network_backend";
     var.value = NULL;
-    if (environ_cb && environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
+    if (libretro_get_core_variable(environ_cb, &var) && var.value) {
         if (!strcmp(var.value, "nat")) opt_network_backend = 1;
         else                           opt_network_backend = 0;
     }
 
     var.key = "xemu_hard_fpu";
     var.value = NULL;
-    if (environ_cb && environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
+    if (libretro_get_core_variable(environ_cb, &var) && var.value) {
         opt_hard_fpu = !strcmp(var.value, "enabled");
     }
 
     var.key = "xemu_surface_scale";
     var.value = NULL;
-    if (environ_cb && environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
+    if (libretro_get_core_variable(environ_cb, &var) && var.value) {
         opt_surface_scale = atoi(var.value);
         if (opt_surface_scale < 1) opt_surface_scale = 1;
         if (opt_surface_scale > 10) opt_surface_scale = 10;
@@ -1618,13 +1621,13 @@ static void update_variables(void)
 
     var.key = "xemu_use_dsp";
     var.value = NULL;
-    if (environ_cb && environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
+    if (libretro_get_core_variable(environ_cb, &var) && var.value) {
         opt_use_dsp = !strcmp(var.value, "enabled");
     }
 
     var.key = "xemu_avpack";
     var.value = NULL;
-    if (environ_cb && environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
+    if (libretro_get_core_variable(environ_cb, &var) && var.value) {
         if (!strcmp(var.value, "hdtv"))           opt_avpack = CONFIG_SYS_AVPACK_HDTV;
         else if (!strcmp(var.value, "composite")) opt_avpack = CONFIG_SYS_AVPACK_COMPOSITE;
         else if (!strcmp(var.value, "svideo"))    opt_avpack = CONFIG_SYS_AVPACK_SVIDEO;
@@ -1634,44 +1637,54 @@ static void update_variables(void)
 
     var.key = "xemu_cache_shaders";
     var.value = NULL;
-    if (environ_cb && environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
+    if (libretro_get_core_variable(environ_cb, &var) && var.value) {
         opt_cache_shaders = !strcmp(var.value, "enabled");
     }
 
     var.key = "xemu_cpu_boost";
     var.value = NULL;
-    if (environ_cb && environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
+    if (libretro_get_core_variable(environ_cb, &var) && var.value) {
         opt_cpu_boost = !strcmp(var.value, "enabled");
     }
 
     var.key = "xemu_chihiro_freeplay";
     var.value = NULL;
-    if (environ_cb && environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
+    if (libretro_get_core_variable(environ_cb, &var) && var.value) {
         opt_chihiro_freeplay = !strcmp(var.value, "enabled");
     }
 
     var.key = "xemu_vk_fast_paths";
     var.value = NULL;
-    if (environ_cb && environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
+    if (libretro_get_core_variable(environ_cb, &var) && var.value) {
         opt_vk_gpl = !strcmp(var.value, "all") || !strcmp(var.value, "no_dyn");
         opt_vk_dynamic = !strcmp(var.value, "all") || !strcmp(var.value, "no_gpl");
     }
 
     var.key = "xemu_chihiro_gun_aim";
     var.value = NULL;
-    if (environ_cb && environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
+    if (libretro_get_core_variable(environ_cb, &var) && var.value) {
         libretro_chihiro_aim_stick = !strcmp(var.value, "stick");
     }
 
     var.key = "xemu_chihiro_crosshair";
     var.value = NULL;
-    if (environ_cb && environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
+    if (libretro_get_core_variable(environ_cb, &var) && var.value) {
         libretro_chihiro_crosshair = strcmp(var.value, "disabled") != 0;
+    }
+
+    var.key = "xemu_chihiro_steering_deadzone";
+    var.value = NULL;
+    libretro_chihiro_steering_deadzone = 12;
+    if (libretro_get_core_variable(environ_cb, &var) && var.value) {
+        int deadzone = atoi(var.value);
+        if (deadzone >= 0 && deadzone <= 30) {
+            libretro_chihiro_steering_deadzone = deadzone;
+        }
     }
 
     var.key = "xemu_chihiro_ffb";
     var.value = NULL;
-    if (environ_cb && environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
+    if (libretro_get_core_variable(environ_cb, &var) && var.value) {
         opt_chihiro_ffb = atoi(var.value);
     }
     /* read by retro_run's rumble (libretro-chihiro.c), so it applies at once */
@@ -1680,28 +1693,21 @@ static void update_variables(void)
 
     var.key = "xemu_smooth_first_play";
     var.value = NULL;
-    if (environ_cb && environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
+    if (libretro_get_core_variable(environ_cb, &var) && var.value) {
         opt_smooth_first_play = !strcmp(var.value, "enabled");
-    }
-
-    var.key = "xemu_display_filtering";
-    var.value = NULL;
-    if (environ_cb && environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
-        if (!strcmp(var.value, "nearest")) opt_filtering = CONFIG_DISPLAY_FILTERING_NEAREST;
-        else                              opt_filtering = CONFIG_DISPLAY_FILTERING_LINEAR;
     }
 
     var.key = "xemu_audio_volume";
     var.value = NULL;
-    if (environ_cb && environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
+    if (libretro_get_core_variable(environ_cb, &var) && var.value) {
         opt_audio_volume = atoi(var.value);
         if (opt_audio_volume < 0) opt_audio_volume = 0;
         if (opt_audio_volume > 100) opt_audio_volume = 100;
     }
 
-    LRLOG_INFO("[xemu] Options: memory=%dMB, scale=%d, avpack=%d, cache=%d, filter=%d, volume=%d%%, network=%s\n",
+    LRLOG_INFO("[xemu] Options: memory=%dMB, scale=%d, avpack=%d, cache=%d, volume=%d%%, network=%s\n",
                opt_memory_mb, opt_surface_scale,
-               opt_avpack, opt_cache_shaders, opt_filtering, opt_audio_volume,
+               opt_avpack, opt_cache_shaders, opt_audio_volume,
                opt_network_backend == 1 ? "nat" : "disabled");
 
     /* Apply runtime-safe options */
@@ -1724,7 +1730,6 @@ static void update_variables(void)
                 environ_cb(RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO, &av_info);
             }
         }
-        g_config.display.filtering = opt_filtering;
         g_config.perf.cache_shaders = opt_cache_shaders;
         g_config.audio.use_dsp = opt_use_dsp;
     }
@@ -1738,34 +1743,21 @@ static void populate_config(const char *dvd_path)
 {
     LRLOG_INFO("[xemu] Populating g_config from core options\n");
 
-    /* Set file paths in g_config */
-    if (opt_bootrom_path[0]) {
-        xemu_settings_set_string(&g_config.sys.files.bootrom_path, opt_bootrom_path);
-    }
-    if (opt_bios_path[0]) {
-        xemu_settings_set_string(&g_config.sys.files.flashrom_path, opt_bios_path);
-    }
-    if (opt_hdd_path[0]) {
-        xemu_settings_set_string(&g_config.sys.files.hdd_path, opt_hdd_path);
-    }
-    if (opt_eeprom_path[0]) {
-        xemu_settings_set_string(&g_config.sys.files.eeprom_path, opt_eeprom_path);
-    }
+    /* Even unused console paths must be strings: the shared startup code
+     * reads them before selecting Chihiro's separate disk/EEPROM resources. */
+    xemu_settings_set_string(&g_config.sys.files.bootrom_path, opt_bootrom_path);
+    xemu_settings_set_string(&g_config.sys.files.flashrom_path, opt_bios_path);
+    xemu_settings_set_string(&g_config.sys.files.hdd_path, opt_hdd_path);
+    xemu_settings_set_string(&g_config.sys.files.eeprom_path, opt_eeprom_path);
 
-    /* Chihiro files live in system/xemu/Chihiro/. The media board flash and
-     * the EEPROMs are found next to the BIOS by their MAME names; only the
-     * optional network firmware needs its own path. */
-    if (system_dir[0]) {
-        char path[4096];
-        snprintf(path, sizeof(path), "%s/xemu/Chihiro/chihiro_xbox_bios.bin",
-                 system_dir);
-        xemu_settings_set_string(&g_config.chihiro.roms.bios_path, path);
-        snprintf(path, sizeof(path), "%s/xemu/Chihiro/ver1305.bin", system_dir);
-        if (g_file_test(path, G_FILE_TEST_IS_REGULAR)) {
-            xemu_settings_set_string(&g_config.chihiro.roms.net_firmware_path,
-                                     path);
-        }
-    }
+    /* Resolved read-only firmware paths; writable EEPROM/cards/save paths
+     * remain under the profile root, never beside archived game content. */
+    xemu_settings_set_string(&g_config.chihiro.roms.bios_path, chihiro_firmware.path[XEMU_FW_BIOS]);
+    xemu_settings_set_string(&g_config.chihiro.roms.mediaboard_path, chihiro_firmware.path[XEMU_FW_FLASH]);
+    xemu_settings_set_string(&g_config.chihiro.roms.ic10_path, chihiro_firmware.path[XEMU_FW_IC10]);
+    xemu_settings_set_string(&g_config.chihiro.roms.ic11_path, chihiro_firmware.path[XEMU_FW_IC11]);
+    xemu_settings_set_string(&g_config.chihiro.roms.pc20_path, chihiro_firmware.path[XEMU_FW_PC20]);
+    xemu_settings_set_string(&g_config.chihiro.roms.net_firmware_path, chihiro_firmware.path[XEMU_FW_NET]);
     /* The Chihiro settings the machine reads, at config_spec.yml's defaults:
      * g_config starts zeroed in the core (no xemu.toml), which leaves its
      * strings NULL - the snapshot store setup takes strlen of one at a
@@ -1806,9 +1798,8 @@ static void populate_config(const char *dvd_path)
 
     /* also when empty: a load without content after one with it */
     xemu_settings_set_string(&g_config.sys.files.dvd_path, dvd_path ? dvd_path : "");
-    /* Xbox or Chihiro and the image, decided for this content (an Xbox disc
-     * image boots an Xbox, any other image - a .bin netboot image - a
-     * Chihiro; retro_load_game has refused the other machine's content) */
+    /* Reset content-derived state. Dedicated build profiles retain their
+     * fixed machine; Full selects it from the content as in the donor. */
     extern void libretro_chihiro_mode_reset(void);
     libretro_chihiro_mode_reset();
 
@@ -1841,7 +1832,6 @@ static void populate_config(const char *dvd_path)
     g_config.audio.use_dsp = opt_use_dsp;
     g_config.display.quality.surface_scale = opt_surface_scale;
     g_config.sys.avpack = opt_avpack;
-    g_config.display.filtering = opt_filtering;
 
     /* Set network configuration */
     g_config.net.enable = (opt_network_backend == 1);
@@ -2016,6 +2006,9 @@ static void *emu_thread_func(void *opaque)
      * exited, which left the HDD image's cache partitions broken (NNshi:
      * Panzer Dragoon Orta stuck loading, in standalone too with that image) */
     vm_shutdown();
+    if (xemu_chihiro_mode()) {
+        chihiro_flush_persistent_data();
+    }
 
     /* The main loop's GLib context goes to the next content's thread, which
      * cannot take it while this one still owns it as its default */
@@ -2042,7 +2035,8 @@ RETRO_API void retro_set_environment(retro_environment_t cb)
     if (environ_cb(RETRO_ENVIRONMENT_GET_LOG_INTERFACE, &log)) {
         log_cb = log.log;
     }
-    LRLOG_INFO("[xemu] retro_set_environment called\n");
+    LRLOG_INFO("[xemu] retro_set_environment: profile=%s\n",
+               XEMU_LIBRETRO_PROFILE_NAME);
 
     /* Get system directory for BIOS files */
     const char *sys_dir = NULL;
@@ -2155,9 +2149,9 @@ RETRO_API void retro_get_system_info(struct retro_system_info *info)
 {
     libretro_pin_core();
     memset(info, 0, sizeof(*info));
-    info->library_name     = "Microsoft - Xbox (OG)";
+    info->library_name     = XEMU_LIBRETRO_LIBRARY_NAME;
     info->library_version  = xemu_libretro_version;
-    info->valid_extensions = "iso|xiso|bin";
+    info->valid_extensions = XEMU_LIBRETRO_EXTENSIONS;
     info->need_fullpath    = true;
     info->block_extract    = true;
 }
@@ -2234,20 +2228,21 @@ RETRO_API void retro_init(void)
 RETRO_API void retro_deinit(void)
 {
     LRLOG_INFO("[xemu] retro_deinit\n");
+    if (!emu_thread_running) libretro_chihiro_disc_close();
     game_loaded = false;
     emu_initialized = false;
     context_ready = false;
     use_vulkan = false;
 }
 
-/* A content refused at load: the reason as a notification and in the log */
-static void load_refused(const char *text)
+/* Load-time notification and log entry; warnings do not refuse content. */
+static void load_message(const char *text, bool error)
 {
     struct retro_message_ext msg = {
         .msg = text,
         .duration = 6000,
         .priority = 3,
-        .level = RETRO_LOG_ERROR,
+        .level = error ? RETRO_LOG_ERROR : RETRO_LOG_WARN,
         .target = RETRO_MESSAGE_TARGET_ALL,
         .type = RETRO_MESSAGE_TYPE_NOTIFICATION,
         .progress = -1,
@@ -2260,8 +2255,11 @@ static void load_refused(const char *text)
         struct retro_message old = { text, 360 };
         environ_cb(RETRO_ENVIRONMENT_SET_MESSAGE, &old);
     }
-    LRLOG_ERROR("[xemu] %s\n", text);
+    if (error) LRLOG_ERROR("[xemu] %s\n", text);
+    else LRLOG_WARN("[xemu] %s\n", text);
 }
+
+static void load_refused(const char *text) { load_message(text, true); }
 
 RETRO_API bool retro_load_game(const struct retro_game_info *game)
 {
@@ -2290,13 +2288,33 @@ RETRO_API bool retro_load_game(const struct retro_game_info *game)
     }
 
     const char *content = (game && game->path) ? game->path : "";
+    if (!system_dir[0]) {
+        load_refused("xemu: the frontend must provide a system directory");
+        return false;
+    }
 
     /* The machine that is there is an Xbox or a Chihiro, and the next
      * content only gets its disc swapped: a Chihiro game after an Xbox one
      * booted the Xbox dashboard with the netboot image in the drive (NNshi).
      * The other machine needs RetroArch started again. An Xbox disc image
-     * boots an Xbox, any other image a Chihiro, no content an Xbox. */
-    const bool chihiro = content[0] && !xemu_media_is_xbox_disc(content);
+     * selects the machine only in Full. Dedicated profiles fix it at build time. */
+    const XemuLibretroMedia media = xemu_libretro_probe_media(content);
+    if (media == XEMU_MEDIA_UNREADABLE || media == XEMU_MEDIA_UNKNOWN) {
+        load_refused("xemu: content is unreadable or is not a supported Xbox/Chihiro disc or FATX image");
+        return false;
+    }
+    const bool xbox_disc = media == XEMU_MEDIA_XBOX_DISC;
+    const int fixed_machine = xemu_profile_fixed_machine();
+    if (content[0] && fixed_machine == 0 && !xbox_disc) {
+        load_refused("xemu: this Xbox core requires a readable Xbox disc image");
+        return false;
+    }
+    if (fixed_machine == 1 && xbox_disc) {
+        load_refused("Xemu-Chihiro: Xbox discs require the Xbox core");
+        return false;
+    }
+    const bool chihiro = fixed_machine >= 0 ? fixed_machine :
+                         content[0] && !xbox_disc;
     if (emu_started_once && chihiro != emu_started_chihiro) {
         load_refused(chihiro
             ? "xemu: restart RetroArch to load a Chihiro game after an Xbox one"
@@ -2307,6 +2325,27 @@ RETRO_API bool retro_load_game(const struct retro_game_info *game)
      * fills again (chihiro_change_game, when the machine is started); one
      * larger than the memory the machine was built with needs RetroArch
      * started again (NNshi) */
+    if (media == XEMU_MEDIA_CHD || media == XEMU_MEDIA_OPTICAL_CANDIDATE) {
+        char keys[4096], error[256];
+        snprintf(keys, sizeof(keys), "%s/%s/keys", system_dir,
+                 xemu_profile_data_subdir());
+        if (!libretro_chihiro_disc_prepare(content, keys, error, sizeof(error))) {
+            load_refused(error);
+            return false;
+        }
+        LRLOG_INFO("[xemu] Chihiro security dump: %s\n", libretro_chihiro_disc_key_source());
+        const char *warning = libretro_chihiro_disc_warning();
+        if (*warning) load_message(warning, false);
+        LRLOG_INFO("[xemu] Optical decrypted FATX source: %lld bytes\n",
+                   (long long)libretro_chihiro_disc_size(content));
+    } else {
+        libretro_chihiro_disc_close();
+    }
+    if (chihiro && content[0] && !libretro_chihiro_disc_dimm_mib(content)) {
+        libretro_chihiro_disc_close();
+        load_refused("Chihiro: cannot identify a unique DIMM layout from FATX/boot.id");
+        return false;
+    }
     if (emu_started_once && chihiro && strcmp(content, emu_started_image) &&
         !chihiro_netboot_image_fits(content)) {
         load_refused("xemu: restart RetroArch to load this Chihiro game, larger than the last one's media board memory");
@@ -2315,7 +2354,8 @@ RETRO_API bool retro_load_game(const struct retro_game_info *game)
     if (content[0]) {
         LRLOG_INFO("[xemu] Loading game: %s\n", content);
     } else {
-        LRLOG_INFO("[xemu] No content: booting the dashboard, tray empty\n");
+        LRLOG_INFO("[xemu] No content: starting %s\n",
+                   chihiro ? "Chihiro firmware" : "Xbox dashboard, tray empty");
     }
 
     /* Read core options */
@@ -2327,19 +2367,40 @@ RETRO_API bool retro_load_game(const struct retro_game_info *game)
     /* Set shader cache base path */
     if (system_dir[0]) {
         char base_path[4096];
-        snprintf(base_path, sizeof(base_path), "%s/xemu/", system_dir);
+        snprintf(base_path, sizeof(base_path), "%s/%s/", system_dir,
+                 xemu_profile_data_subdir());
+        if (g_mkdir_with_parents(base_path, 0755) != 0) {
+            load_refused("xemu: cannot create the profile data directory");
+            return false;
+        }
         extern void libretro_settings_set_base_path(const char *path);
         libretro_settings_set_base_path(base_path);
         LRLOG_INFO("[xemu] Shader cache base path: %s\n", base_path);
     }
 
-    /* Auto-populate BIOS paths from system directory if not set by options.
-     * Each file is looked for in system/xemu/ and then in system/ itself,
-     * where an older core info file had them (boardsofcanada), and the BIOS
-     * under both of the names it goes by. The first one there is used; when
-     * none is, the path stays the first place, for the message below. */
-    if (system_dir[0]) {
-        static const char *const dirs[] = { "xemu/", "" };
+    memset(&chihiro_firmware, 0, sizeof(chihiro_firmware));
+    if (chihiro) {
+        char error[256] = "Chihiro firmware path is too long";
+        if (!libretro_chihiro_firmware_resolve(system_dir, xemu_profile_data_subdir(),
+                content, libretro_chihiro_disc_set(), libretro_chihiro_disc_parent(),
+                &chihiro_firmware, error, sizeof(error))) {
+            libretro_chihiro_disc_close();
+            load_refused(error);
+            return false;
+        }
+        for (unsigned i = 0; i < XEMU_FW_COUNT; i++)
+            if (*chihiro_firmware.path[i])
+                LRLOG_INFO("[xemu] Chihiro firmware: %s -> %s\n",
+                    chihiro_firmware.source[i], chihiro_firmware.path[i]);
+    }
+
+    /* Preserve Xbox's legacy lookup and BIOS aliases. Full uses its own
+     * writable files, but may read firmware from the existing Xbox archive.
+     * With no match, retain the profile path for the error message. */
+    if (system_dir[0] && !chihiro) {
+        char profile_dir[128];
+        snprintf(profile_dir, sizeof(profile_dir), "%s/", xemu_profile_data_subdir());
+        const char *const dirs[] = { profile_dir, "xemu/", "" };
         static const char *const bootrom_names[] = { "mcpx_1.0.bin", NULL };
         static const char *const bios_names[] = { "Complex_4627v1.03.bin", "Complex_4627.bin", NULL };
         static const char *const hdd_names[] = { "xbox_hdd.qcow2", NULL };
@@ -2360,7 +2421,11 @@ RETRO_API bool retro_load_game(const struct retro_game_info *game)
             if (files[i].path[0]) {
                 continue;
             }
-            for (size_t d = 0; d < sizeof(dirs) / sizeof(dirs[0]) && !found; d++) {
+            /* Full may reuse read-only firmware, never a writable Xbox disk
+             * or EEPROM implicitly. Explicit legacy path overrides remain valid. */
+            const size_t dir_count = XEMU_LIBRETRO_PROFILE == XEMU_PROFILE_FULL && i >= 2
+                                     ? 1 : G_N_ELEMENTS(dirs);
+            for (size_t d = 0; d < dir_count && !found; d++) {
                 for (size_t n = 0; files[i].names[n] && !found; n++) {
                     FILE *probe;
                     snprintf(files[i].path, files[i].size, "%s/%s%s",
@@ -2373,8 +2438,8 @@ RETRO_API bool retro_load_game(const struct retro_game_info *game)
                 }
             }
             if (!found) {
-                snprintf(files[i].path, files[i].size, "%s/xemu/%s",
-                         system_dir, files[i].names[0]);
+                snprintf(files[i].path, files[i].size, "%s/%s/%s",
+                         system_dir, xemu_profile_data_subdir(), files[i].names[0]);
             }
             LRLOG_INFO("[xemu] Auto-set %s: %s\n", files[i].what, files[i].path);
         }
@@ -2405,7 +2470,8 @@ RETRO_API bool retro_load_game(const struct retro_game_info *game)
         f = fopen(opt_hdd_path, "rb");
         if (!f) {
             LRLOG_ERROR("[xemu] Xbox HDD image not found: %s\n", opt_hdd_path);
-            LRLOG_ERROR("[xemu] Place xbox_hdd.qcow2 in RetroArch system/xemu/ directory\n");
+            LRLOG_ERROR("[xemu] Place xbox_hdd.qcow2 in RetroArch system/%s/ directory\n",
+                        xemu_profile_data_subdir());
             return false;
         }
         fclose(f);
@@ -2561,6 +2627,7 @@ RETRO_API void retro_unload_game(void)
     qatomic_set(&last_run_us, 0);
     qatomic_set(&frontend_paused, false);
 
+    libretro_chihiro_disc_close();
     game_loaded = false;
     emu_initialized = false;
 }

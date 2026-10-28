@@ -62,6 +62,8 @@ static float trigger(unsigned port, unsigned id)
  * them) */
 bool libretro_chihiro_aim_stick;
 bool libretro_chihiro_crosshair = true;
+/* Standalone's gamepad steering deadzone; independent of frontend filtering. */
+unsigned libretro_chihiro_steering_deadzone = 12;
 
 XemuLibretroCrosshair xemu_libretro_crosshairs[2];
 
@@ -102,12 +104,22 @@ static uint16_t axis_smooth(uint16_t pos, bool neg, bool posv)
 }
 
 /* A left-stick axis, or the D-pad ramping, as a JVS channel */
-static uint16_t steering(unsigned port, uint16_t *ramp, bool invert)
+static uint16_t steering(unsigned port, uint16_t *ramp, bool invert,
+                         unsigned deadzone)
 {
     int16_t x = stick(port, RETRO_DEVICE_INDEX_ANALOG_LEFT,
                       RETRO_DEVICE_ID_ANALOG_X);
     bool l = pad(port, RETRO_DEVICE_ID_JOYPAD_LEFT);
     bool r = pad(port, RETRO_DEVICE_ID_JOYPAD_RIGHT);
+
+    /* Driving callers default to standalone's 12% gamepad deadzone. A
+     * resting stick can drift with no frontend filtering, failing OutRun 2's
+     * drive-board centering check. Other profiles pass zero. Libretro gives
+     * us the already-filtered axis, so this is an additional deadzone, not
+     * MAX(frontend, core). Preserve travel outside it and digital steering. */
+    if (fabsf(x / 32767.0f) < deadzone / 100.0f) {
+        x = 0;
+    }
 
     if (invert) {
         bool t = l;
@@ -356,7 +368,8 @@ void libretro_chihiro_update_input(void)
     case CONFIG_CHIHIRO_JVS_PROFILE_CTX:
     case CONFIG_CHIHIRO_JVS_PROFILE_OR2:
     case CONFIG_CHIHIRO_JVS_PROFILE_WMMT2: {
-        uint16_t steer = steering(0, &steer_ramp, false);
+        uint16_t steer = steering(0, &steer_ramp, false,
+                                  libretro_chihiro_steering_deadzone);
 
         jvs->analog[0] = steer;
         if (chihiro_v257_global)
@@ -394,7 +407,7 @@ void libretro_chihiro_update_input(void)
     }
     case CONFIG_CHIHIRO_JVS_PROFILE_OK: {
         /* The board reads left above centre and right below it */
-        jvs->analog[1] = steering(0, &steer_ramp, true);
+        jvs->analog[1] = steering(0, &steer_ramp, true, 0);
         if (pad(0, RETRO_DEVICE_ID_JOYPAD_UP) ||
             stick(0, RETRO_DEVICE_INDEX_ANALOG_LEFT,
                   RETRO_DEVICE_ID_ANALOG_Y) < -0x4000)

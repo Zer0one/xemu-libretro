@@ -8,6 +8,7 @@ specific_ss.add(files(
 	'chihiro-driveboard-sega838.c',
 	'chihiro-driveboard-v257.c',
 	'chihiro-jvs.c',
+	'chihiro-image-layout.c',
 	'chihiro-mips.c',
 	'chihiro-netboard.c',
 	'chihiro-pic.c',

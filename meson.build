@@ -804,6 +804,26 @@ if 'cpp' in all_languages
 endif
 
 if get_option('libretro')
+  # One profile per build directory: generated state and objects must not be
+  # shared between cores. CPU, GPU and audio sources remain the donor's.
+  libretro_profiles = {
+    'xbox': ['1', 'xemu_libretro', 'Microsoft - Xbox (OG)', 'iso|xiso'],
+    'chihiro': ['2', 'xemu_chihiro_libretro', 'Xemu-Chihiro', 'bin|chd|cue|gdi|iso'],
+    'full': ['3', 'xemu_full_libretro', 'Xemu-Full', 'iso|xiso|bin|chd|cue|gdi'],
+  }
+  libretro_profile = libretro_profiles[get_option('libretro_system')]
+  libretro_stem = libretro_profile[1]
+  libretro_profile_config = configuration_data()
+  libretro_profile_config.set('XEMU_LIBRETRO_PROFILE', libretro_profile[0])
+  libretro_profile_config.set_quoted('XEMU_LIBRETRO_PROFILE_NAME', get_option('libretro_system'))
+  libretro_profile_config.set_quoted('XEMU_LIBRETRO_LIBRARY_NAME', libretro_profile[2])
+  libretro_profile_config.set_quoted('XEMU_LIBRETRO_EXTENSIONS', libretro_profile[3])
+  configure_file(output: 'libretro-profile-config.h',
+                 configuration: libretro_profile_config)
+  configure_file(input: 'ui/xemu_libretro.info', output: libretro_stem + '.info',
+                 command: [python, files('scripts/gen-libretro-info.py'),
+                           get_option('libretro_system'), libretro_profile[2],
+                           libretro_profile[3], '@INPUT@'], capture: true)
   libretro_static_defs = ['-DLIBRETRO=1', '-DCURL_STATICLIB', '-DLIBSLIRP_STATIC',
                           '-DEPOXY_PUBLIC=extern', '-DGLIB_STATIC_COMPILATION',
                           '-DGIO_STATIC_COMPILATION', '-DGMODULE_STATIC_COMPILATION',
@@ -4759,7 +4779,7 @@ foreach target : target_dirs
         endif
         libretro_suffix = 'so'
       endif
-      xemu_libretro = shared_library('xemu_libretro',
+      xemu_libretro = shared_library(libretro_stem,
         files('system/main.c'),
         install: true,
         c_args: c_args + libretro_static_defs,
@@ -4770,7 +4790,7 @@ foreach target : target_dirs
         name_prefix: '',
         name_suffix: libretro_suffix,
       )
-      emulators += {'xemu_libretro': xemu_libretro}
+      emulators += {libretro_stem: xemu_libretro}
     else
     execs = [{
       'name': 'qemu-system-' + target_name,

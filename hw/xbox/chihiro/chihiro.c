@@ -44,9 +44,13 @@
 #include "qemu/main-loop.h"
 #include "hw/usb.h"
 #include "ui/xemu-settings.h"
+#ifdef LIBRETRO
+#include "ui/libretro-chihiro-disc.h"
+#endif
 #include "target/i386/cpu.h"
 #include "exec/watchpoint.h"
 #include "chihiro-jvs.h"
+#include "chihiro-titles.h"
 #include "chihiro-cardreader-hw210.h"
 #include "chihiro-cardreader-crp1231.h"
 #include "chihiro-driveboard-v257.h"
@@ -407,10 +411,32 @@ static uint16_t mediaboard_net_firmware_version(void)
     return ver;
 }
 
-/* The JP1/JP2 jumpers the kernel reads at SEGA_DIMM_SIZE: 0 is 128 MB, 3 is
- * 1024 MB (the setting's enum index). Past those, Auto: the smallest module
- * that holds the game's image (Gundam's 576 MiB needs 1024; the others fit
- * 512). Settled once and logged. */
+/* Read-only frontend media adapter. The donor's regular FATX file path is
+ * retained; CHD content supplies the same plaintext bytes and size. */
+static int64_t chihiro_frontend_image_size(const char *path)
+{
+#ifdef LIBRETRO
+    return libretro_chihiro_disc_size(path);
+#else
+    return -1;
+#endif
+}
+
+static bool chihiro_image_read_at(FILE *f, const char *path, uint64_t offset,
+                                  void *buffer, size_t size)
+{
+#ifdef LIBRETRO
+    if (libretro_chihiro_disc_size(path) >= 0)
+        return libretro_chihiro_disc_read(path, offset, buffer, size);
+#endif
+    return f && offset <= INT64_MAX && fseeko(f, offset, SEEK_SET) == 0 &&
+           fread(buffer, 1, size, f) == size;
+}
+
+/* JP1/JP2 value read at SEGA_DIMM_SIZE: 0 is 128 MB, 3 is 1024 MB.
+ * Explicit donor configuration wins. The Libretro Auto path uses the same
+ * validated FATX/boot.id geometry for every title and both input formats.
+ * Keep the standalone donor's size-based Auto path under its own guard. */
 unsigned chihiro_dimm_factor(void)
 {
     static unsigned factor;
@@ -430,8 +456,19 @@ unsigned chihiro_dimm_factor(void)
 
     factor = SEGA_DIMM_SIZE_512M;
     const char *path = xemu_chihiro_image();
-    int64_t size = -1;
-    if (path && path[0]) {
+#ifdef LIBRETRO
+    unsigned title_mib = libretro_chihiro_disc_dimm_mib(path);
+    if (title_mib) {
+        factor = title_mib == 1024 ? SEGA_DIMM_SIZE_1024M :
+                 title_mib == 512 ? SEGA_DIMM_SIZE_512M :
+                 title_mib == 256 ? SEGA_DIMM_SIZE_256M : SEGA_DIMM_SIZE_128M;
+        fprintf(stderr, "Chihiro: media board DIMM %u MB, verified FATX/boot.id layout\n", title_mib);
+        return factor;
+    }
+#else
+    int64_t size = chihiro_frontend_image_size(path);
+    bool decoded_disc = size >= 0;
+    if (size < 0 && path && path[0]) {
         FILE *f = qemu_fopen(path, "rb");
         if (f) {
             if (fseek(f, 0, SEEK_END) == 0)
@@ -443,7 +480,8 @@ unsigned chihiro_dimm_factor(void)
         /* The smallest DIMM the image fits in, the largest if none. */
         factor = SEGA_DIMM_SIZE_1024M;
         for (unsigned i = SEGA_DIMM_SIZE_128M; i < SEGA_DIMM_SIZE_1024M; i++) {
-            if (size <= ((int64_t)128 << 20) << i) {
+            if (size <= (((int64_t)128 << 20) << i) -
+                        (decoded_disc ? (16 << 20) : 0)) {
                 factor = i;
                 break;
             }
@@ -455,6 +493,12 @@ unsigned chihiro_dimm_factor(void)
         fprintf(stderr, "Chihiro: media board DIMM %u MB — no image to size it "
                 "against\n", 128u << factor);
     }
+#endif
+#ifdef LIBRETRO
+    /* Content admission requires a unique image layout. Without content the
+     * firmware keeps the donor's empty-board default, not a per-game guess. */
+    fprintf(stderr, "Chihiro: media board DIMM 512 MB, empty board default\n");
+#endif
     return factor;
 }
 
@@ -3006,33 +3050,14 @@ static bool chihiro_game_base_name(char *base, size_t base_len)
 /* A game's files take its MAME name, the parent set's (revisions and regions
  * share it), found by the identifier at boot.id 0x30. A game MAME does not
  * have takes that identifier in lower case (the OutRun 2 prototype: gbz). */
-static const struct {
-    char id[5];
-    const char *name;
-} chihiro_game_names[] = {
-    { "SBFN", "hotd3" },    /* The House of the Dead III */
-    { "SBFY", "crtaxihr" }, /* Crazy Taxi High Roller */
-    { "SBFZ", "vcop3" },    /* Virtua Cop 3 */
-    { "SGBZ", "outr2" },    /* OutRun 2 */
-    { "SBHC", "mj2" },      /* Sega Network Taisen Mahjong MJ 2 */
-    { "SBHF", "ollie" },    /* Ollie King */
-    { "SBHQ", "wangmid" },  /* Wangan Midnight Maximum Tune */
-    { "SBHU", "ghostsqu" }, /* Ghost Squad */
-    { "SBJK", "gundamos" }, /* Gundam Battle Operating Simulator */
-    { "SBJE", "outr2st" },  /* OutRun 2 Special Tours */
-    { "SBKD", "wangmid2" }, /* Wangan Midnight Maximum Tune 2 */
-    { "SBKK", "mj3" },      /* Sega Network Taisen Mahjong MJ 3 */
-    { "SBLF", "scg06nt" },  /* Sega Club Golf 2006 Next Tours */
-    { "SBME", "mj3evo" },   /* Sega Network Taisen Mahjong MJ 3 Evolution */
-};
 
 static void chihiro_game_name_of(const uint8_t *id, char *out, size_t out_len)
 {
     size_t n = 0;
 
-    for (size_t i = 0; i < ARRAY_SIZE(chihiro_game_names); i++) {
-        if (memcmp(chihiro_game_names[i].id, id, 4) == 0) {
-            g_strlcpy(out, chihiro_game_names[i].name, out_len);
+    for (size_t i = 0; i < ARRAY_SIZE(chihiro_titles); i++) {
+        if (memcmp(chihiro_titles[i].id, id, 4) == 0) {
+            g_strlcpy(out, chihiro_titles[i].name, out_len);
             return;
         }
     }
@@ -3305,16 +3330,23 @@ bool chihiro_gundam_card_repair(const char *card_path, char *why, size_t why_len
     return false;
 }
 
-static void chihiro_exit_notify(Notifier *notifier, void *data)
+/* Call with guest execution stopped and the BQL held. Unlike the process
+ * exit path, this preserves devices/workers for a subsequent content load. */
+void chihiro_flush_persistent_data(void)
 {
-    (void)notifier;
-    (void)data;
-    chihiro_netboard_exit();
     if (!chihiro_active) return;
     if (!chihiro_save_path[0] && !chihiro_resolve_save_path()) return;
     if (chihiro_usb_save_flush(chihiro_save_path))
         fprintf(stderr, "Chihiro: save flushed to %s\n", chihiro_save_path);
     chihiro_dimm_sys_flush();
+}
+
+static void chihiro_exit_notify(Notifier *notifier, void *data)
+{
+    (void)notifier;
+    (void)data;
+    chihiro_netboard_exit();
+    chihiro_flush_persistent_data();
 }
 
 static Notifier chihiro_exit_notifier = { .notify = chihiro_exit_notify };
@@ -3501,7 +3533,7 @@ static bool chihiro_read_image_bootid(uint8_t *bid)
     }
     bool ok = false;
     uint8_t hdr[16];
-    if (fread(hdr, 1, sizeof(hdr), f) != sizeof(hdr) ||
+    if (!chihiro_image_read_at(f, path, 0, hdr, sizeof(hdr)) ||
         memcmp(hdr, "FATX", 4) != 0) {
         goto out;
     }
@@ -3514,8 +3546,8 @@ static bool chihiro_read_image_bootid(uint8_t *bid)
     uint64_t entries = chihiro_fs_size() / cluster + 1;
     uint64_t data = 4096 + ROUND_UP(entries * (entries < 0xFFF0 ? 2 : 4), 4096);
     uint8_t *dir = g_malloc(cluster);
-    if (fseeko(f, data + (uint64_t)(root - 1) * cluster, SEEK_SET) == 0 &&
-        fread(dir, 1, cluster, f) == cluster) {
+    if (chihiro_image_read_at(f, path, data + (uint64_t)(root - 1) * cluster,
+                              dir, cluster)) {
         for (uint32_t i = 0; i + 64 <= cluster; i += 64) {
             const uint8_t *e = dir + i;
             if (e[0] == 0 || e[0] == 0xFF) {
@@ -3527,8 +3559,8 @@ static bool chihiro_read_image_bootid(uint8_t *bid)
             }
             uint32_t first = ldl_le_p(e + 0x2C);
             ok = first != 0 &&
-                 fseeko(f, data + (uint64_t)(first - 1) * cluster, SEEK_SET) == 0 &&
-                 fread(bid, 1, CHIHIRO_BOOTID_LEN, f) == CHIHIRO_BOOTID_LEN &&
+                 chihiro_image_read_at(f, path, data + (uint64_t)(first - 1) * cluster,
+                                       bid, CHIHIRO_BOOTID_LEN) &&
                  memcmp(bid, "BTID", 4) == 0;
             break;
         }
@@ -3635,6 +3667,18 @@ static uint8_t *chihiro_dimm_read_image(uint64_t buf_size,
                                         uint64_t *file_size, uint32_t *crc)
 {
     const char *path = xemu_chihiro_image();
+    int64_t source_size = chihiro_frontend_image_size(path);
+    if (source_size >= 0) {
+        uint8_t *buf = g_malloc0(buf_size);
+        size_t n = MIN((uint64_t)source_size, buf_size);
+        if (!chihiro_image_read_at(NULL, path, 0, buf, n)) {
+            g_free(buf);
+            return NULL;
+        }
+        *file_size = n;
+        *crc = crc32(0, buf, n);
+        return buf;
+    }
     FILE *f = (path && path[0]) ? qemu_fopen(path, "rb") : NULL;
     if (!f) {
         return NULL;
@@ -3899,15 +3943,22 @@ void chihiro_load_netboot_image(void)
         FILE *f = qemu_fopen(dvd, "rb");
         if (f) {
             uint8_t magic[4];
-            if (fread(magic, 1, 4, f) == 4 &&
+            if (chihiro_image_read_at(f, dvd, 0, magic, sizeof(magic)) &&
                 memcmp(magic, "FATX", 4) == 0) {
                 rewind(f);
                 gint64 t0 = g_get_monotonic_time();
                 struct stat st;
                 fstat(fileno(f), &st);
-                uint32_t file_size = (uint32_t)st.st_size;
+                int64_t decoded_size = chihiro_frontend_image_size(dvd);
+                uint32_t file_size = decoded_size >= 0 ? decoded_size : st.st_size;
                 if (file_size > fs_size) file_size = fs_size;
-                size_t nread = fread(fs_buf, 1, file_size, f);
+                size_t nread = decoded_size >= 0
+                    ? (chihiro_image_read_at(f, dvd, 0, fs_buf, file_size) ? file_size : 0)
+                    : fread(fs_buf, 1, file_size, f);
+                if (nread != file_size) {
+                    memset(fs_buf, 0, fs_size);
+                    error_report("Chihiro: failed reading game image into DIMM");
+                }
                 printf("Chihiro: FATX image loaded '%s'"
                        " (%zu bytes, %lld ms)\n",
                        dvd, nread,
@@ -3948,6 +3999,10 @@ bool chihiro_netboot_image_fits(const char *path)
     uint32_t fs_size = 0;
     struct stat st;
 
+    int64_t decoded_size = chihiro_frontend_image_size(path);
+    if (decoded_size >= 0) {
+        return chihiro_fatx_get_buffer(&fs_size) && (uint64_t)decoded_size <= fs_size;
+    }
     if (!chihiro_fatx_get_buffer(&fs_size) || stat(path, &st) != 0) {
         return false;
     }
