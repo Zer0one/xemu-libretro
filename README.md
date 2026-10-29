@@ -70,7 +70,7 @@ are currently disabled, including build, buildbot preflight and translation
 workflows. Their recipes target `main` when explicitly re-enabled; no automatic
 builds or releases are published automatically by this fork.
 
-**Current release: [v0.8.138-9.1](https://github.com/Zer0one/xemu-libretro/releases/tag/v0.8.138-9.1)**,
+**Current release: [v0.8.138-9.2](https://github.com/Zer0one/xemu-libretro/releases/tag/v0.8.138-9.2)**,
 based on official xemu `0.8.138-9` (`dc10b4cea9`) and WizzardSK Libretro
 `84570ac21d`. It provides separate Xbox and Chihiro cores from the same source
 base, native Chihiro optical loading and the content-reload corrections below.
@@ -79,11 +79,11 @@ validation. Packages are produced by GitHub Actions for both dedicated profiles:
 
 | Platform | Xbox | Sega - Chihiro |
 | --- | --- | --- |
-| Windows x86_64 | [Download](https://github.com/Zer0one/xemu-libretro/releases/download/v0.8.138-9.1/xemu_libretro-windows-x86_64-v0.8.138-9.1.zip) | [Download](https://github.com/Zer0one/xemu-libretro/releases/download/v0.8.138-9.1/xemu_chihiro_libretro-windows-x86_64-v0.8.138-9.1.zip) |
-| Linux x86_64 | [Download](https://github.com/Zer0one/xemu-libretro/releases/download/v0.8.138-9.1/xemu_libretro-linux-x86_64-v0.8.138-9.1.zip) | [Download](https://github.com/Zer0one/xemu-libretro/releases/download/v0.8.138-9.1/xemu_chihiro_libretro-linux-x86_64-v0.8.138-9.1.zip) |
-| Linux aarch64 | [Download](https://github.com/Zer0one/xemu-libretro/releases/download/v0.8.138-9.1/xemu_libretro-linux-aarch64-v0.8.138-9.1.zip) | [Download](https://github.com/Zer0one/xemu-libretro/releases/download/v0.8.138-9.1/xemu_chihiro_libretro-linux-aarch64-v0.8.138-9.1.zip) |
-| macOS ARM64 | [Download](https://github.com/Zer0one/xemu-libretro/releases/download/v0.8.138-9.1/xemu_libretro-macos-arm64-v0.8.138-9.1.zip) | [Download](https://github.com/Zer0one/xemu-libretro/releases/download/v0.8.138-9.1/xemu_chihiro_libretro-macos-arm64-v0.8.138-9.1.zip) |
-| macOS x86_64 | [Download](https://github.com/Zer0one/xemu-libretro/releases/download/v0.8.138-9.1/xemu_libretro-macos-x86_64-v0.8.138-9.1.zip) | [Download](https://github.com/Zer0one/xemu-libretro/releases/download/v0.8.138-9.1/xemu_chihiro_libretro-macos-x86_64-v0.8.138-9.1.zip) |
+| Windows x86_64 | [Download](https://github.com/Zer0one/xemu-libretro/releases/download/v0.8.138-9.2/xemu_libretro-windows-x86_64-v0.8.138-9.2.zip) | [Download](https://github.com/Zer0one/xemu-libretro/releases/download/v0.8.138-9.2/xemu_chihiro_libretro-windows-x86_64-v0.8.138-9.2.zip) |
+| Linux x86_64 | [Download](https://github.com/Zer0one/xemu-libretro/releases/download/v0.8.138-9.2/xemu_libretro-linux-x86_64-v0.8.138-9.2.zip) | [Download](https://github.com/Zer0one/xemu-libretro/releases/download/v0.8.138-9.2/xemu_chihiro_libretro-linux-x86_64-v0.8.138-9.2.zip) |
+| Linux aarch64 | [Download](https://github.com/Zer0one/xemu-libretro/releases/download/v0.8.138-9.2/xemu_libretro-linux-aarch64-v0.8.138-9.2.zip) | [Download](https://github.com/Zer0one/xemu-libretro/releases/download/v0.8.138-9.2/xemu_chihiro_libretro-linux-aarch64-v0.8.138-9.2.zip) |
+| macOS ARM64 | [Download](https://github.com/Zer0one/xemu-libretro/releases/download/v0.8.138-9.2/xemu_libretro-macos-arm64-v0.8.138-9.2.zip) | [Download](https://github.com/Zer0one/xemu-libretro/releases/download/v0.8.138-9.2/xemu_chihiro_libretro-macos-arm64-v0.8.138-9.2.zip) |
+| macOS x86_64 | [Download](https://github.com/Zer0one/xemu-libretro/releases/download/v0.8.138-9.2/xemu_libretro-macos-x86_64-v0.8.138-9.2.zip) | [Download](https://github.com/Zer0one/xemu-libretro/releases/download/v0.8.138-9.2/xemu_chihiro_libretro-macos-x86_64-v0.8.138-9.2.zip) |
 
 Install the matching `.info` into RetroArch's configured core-info directory and
 refresh its Core Info Cache after replacing metadata. macOS packages include
@@ -243,7 +243,10 @@ Hardware FPU Emulation is hidden on other host architectures.
 **Free Play (Restart)** applies when Chihiro content starts. After changing it,
 close and reopen the content; restarting RetroArch also works. Disabling it
 restores coin operation even when the cabinet save previously used Free Play;
-Select inserts a coin. Existing saves do not need to be deleted.
+Select inserts a coin. Existing saves do not need to be deleted. New titles
+initialize their own EEPROM and backup state before loading a saved copy. Valid
+factory coin records are bound to the current title so Free Play also applies
+on first boot; firmware archives remain unchanged.
 
 **Analog Dead Zone (Player 1/2)** uses the Libretro donor's radial stick filter,
 0–30%, default 10%, on both sticks for Xbox and Chihiro. It replaces the older

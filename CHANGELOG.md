@@ -2,7 +2,9 @@
 
 What changed in the libretro core of this fork, newest first. Changes that come with a merge of upstream xemu are in upstream's own history; a merge is noted here with the upstream version it brought in.
 
-## Unreleased
+## 0.8.138-9.2 - 2026-10-29
+
+- Initialize Chihiro EEPROM/backup state per title before loading its save, preventing a missing save from retaining the previous title’s state. Bind valid factory ACBU records to the current boot ID so OutRun 2 honors Free Play on its first boot. Keep firmware and existing save owners unchanged; commit save loads only after complete reads, preserving version 1/2 files and the 8051 work RAM/mailbox.
 
 ## 0.8.138-9.1 - 2026-10-28
 

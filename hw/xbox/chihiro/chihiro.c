@@ -3359,6 +3359,20 @@ void chihiro_flush_save_now(void)
 
 static bool chihiro_exit_notifier_registered = false;
 
+/* Both first boot and a retained-machine title change start from this
+ * title's factory state. A missing/invalid save must not retain its predecessor. */
+static void chihiro_restore_game_state(void)
+{
+    uint8_t bid[CHIHIRO_BOOTID_LEN];
+    const uint8_t *id = chihiro_read_image_bootid(bid) ? bid + 0x30 : NULL;
+
+    chihiro_usb_save_reset(id);
+    if (chihiro_resolve_save_path()) {
+        chihiro_usb_save_load(chihiro_save_path);
+        chihiro_dimm_sys_load();
+    }
+}
+
 void chihiro_save_init(void)
 {
     if (chihiro_exit_notifier_registered) return;
@@ -3366,10 +3380,7 @@ void chihiro_save_init(void)
     chihiro_exit_notifier_registered = true;
 
     chihiro_migrate_card_paths();
-    if (chihiro_resolve_save_path()) {
-        chihiro_usb_save_load(chihiro_save_path);
-        chihiro_dimm_sys_load();
-    }
+    chihiro_restore_game_state();
 }
 
 /*
@@ -4028,10 +4039,7 @@ void chihiro_change_game(void)
     card_reader_initialized = false;
 
     chihiro_load_netboot_image();
-    if (chihiro_resolve_save_path()) {
-        chihiro_usb_save_load(chihiro_save_path);
-        chihiro_dimm_sys_load();
-    }
+    chihiro_restore_game_state();
 }
 
 /* Copies len bytes into the guest's scatter-gather list, from its start. */

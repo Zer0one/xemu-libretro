@@ -128,6 +128,8 @@ uint32_t chihiro_va_to_pa(uint32_t va);
 void chihiro_on_quickreboot_signal(void);
 
 /* Save file persistence: ic11 + extmem backup area */
+/* Restore fresh per-title state; guest stopped and BQL held. */
+void chihiro_usb_save_reset(const uint8_t *game_id);
 bool chihiro_usb_save_load(const char *path);
 bool chihiro_usb_save_flush(const char *path);
 bool chihiro_usb_save_dirty(void);

@@ -1293,6 +1293,45 @@ static const TypeInfo chihiro_an2131sc_info = {
 #define CHIHIRO_SAVE_LOW_OFF 0x2000
 #define CHIHIRO_SAVE_LOW_SIZE 0x5B40
 
+/* The firmware dump carries another cabinet's game settings. Bind only its
+ * valid factory ACBU records to this title, before the game validates them.
+ * Never retag records read from a user's save. Other EEPROM formats remain
+ * for their games to initialize. */
+static void chihiro_seed_game_id(uint8_t *ic11, const uint8_t *game_id)
+{
+    if (!game_id) return;
+    for (unsigned base = 0; base < 0x80; base += 0x40) {
+        uint8_t *record = ic11 + base;
+        uint16_t sum = 0;
+        if (memcmp(record, "ACBU0001", 8) != 0 ||
+            lduw_le_p(record + 8) != 13) continue;
+        for (unsigned i = 12; i < 64; i++) sum += record[i];
+        if (lduw_le_p(record + 10) != sum) continue;
+        memcpy(record + 0x14, game_id, 4);
+        sum = 0;
+        for (unsigned i = 12; i < 64; i++) sum += record[i];
+        stw_le_p(record + 10, sum);
+    }
+}
+
+/* Guest stopped, BQL held. Keep 8051 work RAM and the mailbox intact; only
+ * the state stored in a per-game save belongs to the title being replaced. */
+void chihiro_usb_save_reset(const uint8_t *game_id)
+{
+    ChihiroUSBState *s = chihiro_qc_instance;
+    if (!s) return;
+    memset(s->ic11, 0, sizeof(s->ic11));
+    if (chihiro_ic11_data && chihiro_ic11_size <= sizeof(s->ic11))
+        memcpy(s->ic11, chihiro_ic11_data, chihiro_ic11_size);
+    chihiro_seed_game_id(s->ic11, game_id);
+    memset(s->extmem[1] + CHIHIRO_SAVE_EXTMEM_OFF, 0,
+           CHIHIRO_SAVE_EXTMEM_SIZE);
+    memset(s->extmem[1] + CHIHIRO_SAVE_LOW_OFF, 0, CHIHIRO_SAVE_LOW_SIZE);
+    s->an2131.backup_dirty = false;
+    chihiro_apply_freeplay(s);
+    chihiro_apply_link_settings(s);
+}
+
 /* A save file: "CHSV", its version, the ic11 EEPROM, then the backup half
  * from 0x8000 and, since version 2, from 0x2000 too. */
 static bool chihiro_usb_save_read(const char *path, uint8_t *ic11,
@@ -1350,11 +1389,23 @@ bool chihiro_usb_save_owner(const char *path, uint8_t *owner)
 bool chihiro_usb_save_load(const char *path)
 {
     ChihiroUSBState *s = chihiro_qc_instance;
+    uint8_t ic11[CHIHIRO_SAVE_IC11_SIZE];
     uint32_t version;
 
-    if (!s || !path ||
-        !chihiro_usb_save_read(path, s->ic11, s->extmem[1], &version))
+    if (!s || !path) return false;
+    /* Do not partially replace live state if the file is truncated. */
+    uint8_t *backup = g_malloc0(0x10000);
+    bool ok = chihiro_usb_save_read(path, ic11, backup, &version);
+    if (!ok) {
+        g_free(backup);
         return false;
+    }
+    memcpy(s->ic11, ic11, sizeof(ic11));
+    memcpy(s->extmem[1] + CHIHIRO_SAVE_EXTMEM_OFF,
+           backup + CHIHIRO_SAVE_EXTMEM_OFF, CHIHIRO_SAVE_EXTMEM_SIZE);
+    memcpy(s->extmem[1] + CHIHIRO_SAVE_LOW_OFF,
+           backup + CHIHIRO_SAVE_LOW_OFF, CHIHIRO_SAVE_LOW_SIZE);
+    g_free(backup);
     fprintf(stderr, "Chihiro: save (version %u) loaded from %s\n", version,
             path);
 

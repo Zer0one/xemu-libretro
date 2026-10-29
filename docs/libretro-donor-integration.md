@@ -23,6 +23,73 @@ Current integrated references are WizzardSK `84570ac21d` and official xemu
 changes and bounded validation. The following sections record the earlier
 integration checkpoint and its validation limits at that time.
 
+## Separate References
+
+The integrated references checked on 2026-10-29 are:
+
+| Reference | Repository And Branch | Exact Revision | Role |
+| --- | --- | --- | --- |
+| Upstream Libretro port | [WizzardSK/xemu-libretro](https://github.com/WizzardSK/xemu-libretro), `libretro` | `84570ac21d828274ec95a0b6d5949281b132fcc0` | Complete port base, frontend contracts and shared Xbox/Chihiro architecture. |
+| Official standalone engine | [xemu-project/xemu](https://github.com/xemu-project/xemu), `master` | `dc10b4cea96e403d30c17ed53551fdaf023bc17f` (`0.8.138-9`) | Emulation engine and same-revision standalone comparison. |
+| Additional standalone donor | [MichaelJSr/xemu-macos](https://github.com/MichaelJSr/xemu-macos), `master` | `237d34f193061c9f25a6ab0c380e946d1982e526` | Reviewed adaptations documented in [MJR Adaptations](libretro-mjr-adaptations.md); not a replacement Libretro base or a full merge of that fork. |
+
+These are integrated or reviewed checkpoints, not a claim about the latest
+remote tips. WizzardSK incorporates Tovarichtch-derived work; this fork receives
+that work through WizzardSK rather than treating it as a separate Libretro
+upstream. The local `libretro` branch preserves the original port and is distinct
+from the current donor reference `libretro/libretro`. The official `upstream`
+branch remains free of port adaptations. Record exact source identities and
+dependency pins in each integration report; `upstream.version` identifies the
+official engine, not the complete port or additional standalone adaptations.
+
+Local improvements adapt to these bases. Standalone remains a comparison
+reference: do not modify it to match the core without an explicit developer
+request. Standalone work belongs in its dedicated project, not in this checkout.
+
+## Reviewing Local Adaptations
+
+Explain each local difference in the relevant existing code comments, technical
+documents and Git history: affected area, reference revision, intended benefit,
+evidence, validation limits and the condition for retiring an exception. Keep
+that explanation current with the implementation. Use, for example, the existing
+[Vulkan lifetime audit](libretro-donor-retention-audit.md),
+[MJR adaptations](libretro-mjr-adaptations.md) and
+[Chihiro persistence investigation](chihiro-freeplay.md). Do not create a
+duplicate patch registry or manually inventory committed versus uncommitted
+changes; Git records that state.
+
+At every authorized update of the Libretro port or official engine, review local
+adaptations in the affected areas and their semantic dependencies, including
+resource lifetimes, configuration, persisted data and frontend contracts.
+Perform that review even when Git merges without conflicts. A diff against the
+Libretro donor can include newer official-engine changes and reviewed standalone
+adaptations; it is not entirely code authored by this fork. Apply the same
+review to overlapping work when updating an additional standalone donor.
+
+Preserve a local change's benefit by adapting it to the new APIs, structures and
+formats. Remove it only after verifying an equivalent upstream solution or that
+its documented need no longer applies. Avoid silently losing corrections or
+keeping duplicate implementations. Update the existing explanation, repeat the
+relevant checks when the implementation or its assumptions change, and record
+the retain/adapt/remove decision in the integration change. Preserve user data;
+bring substantial behavior changes, incompatible migrations or loss of a local
+feature to the developer with a concrete proposal for review.
+
+Compare pristine standalone at the same official engine revision and assess old
+and new baselines separately. Matching engine versions alone do not establish
+identical behavior: a documented local correction may affect the observed path.
+Consult those differences before attributing a defect to the core or dismissing
+a comparison result; retain the standalone result and explain the known
+divergence and its validation limits. For MJR comparisons, also identify its
+exact revision and relevant adaptations. Keep build, frontend load, visible boot
+and gameplay evidence distinct.
+
+This policy supplements [AGENTS.md](../AGENTS.md) without changing it or
+`CLAUDE.md`. Official engine updates still require full merges and immediate
+application of `.upstream-excluded`; excluded standalone components stay removed.
+A documentation or policy update does not authorize a merge, engine change,
+game test, installation, commit, push, CI run or release.
+
 ## Initial Integration References And Scope
 
 This integration merges WizzardSK/xemu-libretro's `libretro` branch through

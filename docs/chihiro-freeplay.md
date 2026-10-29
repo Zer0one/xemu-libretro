@@ -66,3 +66,47 @@ three-load runtime candidate; the final rebuilt package also adds the per-load
 Free Play log line, without changing the tested setting logic. Keep compact logs, result JSON and representative
 captures there; remove private writable fixtures, the proxy library and the
 fresh Chihiro build tree after deployment.
+
+## First Boot And Title Isolation
+
+A fresh title now starts with its own private state before the existing save is
+loaded. Only valid factory `ACBU0001` records are assigned the identifier from
+that game's `boot.id`, with their payload checksums recomputed. This applies to
+the in-memory factory seed, never to an existing user's save or the firmware
+archive. Non-ACBU layouts are left to their games to initialize.
+
+This prevents OutRun 2 from rejecting the OutRun 2 SP identifier in the common
+firmware seed and replacing the requested Free Play mode with coin defaults.
+No periodic EEPROM rewriting or automatic second boot is introduced; later
+service-menu writes keep their normal behavior.
+
+The same initialization path runs at first boot and when changing titles in a
+retained machine. It clears only the QC EEPROM and saved backup-SRAM windows,
+preserving 8051 work RAM and mailbox state. A valid existing save then replaces
+that fresh state. Missing or incomplete files cannot retain another title's
+backup; loaded state is committed only after the complete payload of an accepted
+version 1/2 file has been read.
+The `.sav` version, title filenames, revision/region grouping and shared
+firmware lookup remain unchanged.
+
+`scripts/test-libretro-chihiro-persistence.py` covers factory owner/checksum
+creation, title isolation with no save, transactional truncated-file loading,
+version 1/2 compatibility, and firmware/work-RAM/mailbox preservation under
+ASan/UBSan. Runtime evidence is recorded separately from these native checks.
+
+
+The corrected macOS ARM64 core completed this real RetroArch sequence in one
+process, starting with no game saves: OutRun 2 enabled → OutRun 2 SP enabled →
+OutRun 2 disabled. Captures and both persisted coin records agree: Free Play,
+Free Play, then coin operation; title owners are SGBZ, SBJE, SGBZ and all payload
+checksums are valid. The process exited normally and protected user-file hashes
+were unchanged. The released baseline instead produced coin mode in both fresh
+titles with the option enabled. An earlier candidate run exited during its
+second title before capture; the complete repeat did not reproduce it. Its log
+is retained as a limitation, not treated as a successful run.
+
+The Batocera pre-seeded-state experiment validated the first-boot initialization
+policy using the unchanged released Linux binary. A corrected Linux binary has
+not yet been runtime-tested; the modified-source runtime sequence above is
+macOS only. Records, captures, local build/source hashes and cleanup receipts
+are in `build/chihiro-eeprom-fix-20261028/`.
